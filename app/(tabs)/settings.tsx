@@ -4,8 +4,10 @@ import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { LogOut, User, Shield, Bell, Moon } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const { session, signOut } = useAuth();
   const [email, setEmail] = useState('');
 
@@ -42,7 +44,10 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#09090b' }} contentContainerStyle={{ padding: 16 }}>
+    <ScrollView 
+      style={{ flex: 1, backgroundColor: '#09090b' }} 
+      contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}
+    >
       {/* 프로필 섹션 */}
       <View style={{ backgroundColor: '#18181b', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#27272a' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

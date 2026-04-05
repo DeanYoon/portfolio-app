@@ -9,6 +9,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/src/lib/supabase';
 import { useState } from 'react';
 import { Redirect } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -57,14 +58,16 @@ export default function RootLayout() {
   if (!loaded || loading) return null;
 
   return (
-    <ThemeProvider value={customDarkTheme}>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#09090b' } }}>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="stock/[ticker]" options={{ presentation: 'card', headerShown: true, headerStyle: { backgroundColor: '#09090b' }, headerTintColor: '#e4e4e7' }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider value={customDarkTheme}>
+        <StatusBar style="light" />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#09090b' } }}>
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="stock/[ticker]" options={{ presentation: 'card', headerShown: true, headerStyle: { backgroundColor: '#09090b' }, headerTintColor: '#e4e4e7' }} />
+          <Stack.Screen name="+not-found" />
+        </Stack>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

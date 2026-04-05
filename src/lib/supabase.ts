@@ -1,18 +1,19 @@
+import 'react-native-get-random-values';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+
+const isWeb = Platform.OS === 'web';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    // Prevent AsyncStorage from crashing during server-side static rendering
+    storage: isWeb ? (typeof window !== 'undefined' ? window.localStorage : undefined) : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
   },
 });
-
-// Supabase가 AsyncStorage를 사용할 수 있도록 adapter 설정
-import 'react-native-get-random-values';

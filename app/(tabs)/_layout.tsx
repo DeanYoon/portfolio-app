@@ -26,6 +26,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="trends"
+        options={{
+          title: '추이',
+          tabBarIcon: ({ color, size }) => <TrendingUp size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="dividends"
+        options={{
+          title: '배당',
+          tabBarIcon: ({ color, size }) => <PieChart size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: '설정',
