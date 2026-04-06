@@ -1,745 +1,470 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal, Platform } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatCurrency } from '@/src/utils/format';
-import { VictoryBar, VictoryChart, VictoryAxis, VictoryTheme, VictoryLabel, VictoryContainer } from 'victory-native';
-import { PieChart, Calendar, DollarSign, Info, Wallet, TrendingUp, ChevronRight, Calculator, Globe, ShieldCheck } from 'lucide-react-native';
+import { formatCurrency, getFlag } from '@/src/utils/format';
+import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, StockDividend, TrendEstimate } from '@/src/utils/dividend-calc';
-import { format, parseISO, startOfMonth, endOfMonth, isPast, isSameMonth } from 'date-fns';
+import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
+import { endOfMonth, isPast, isSameMonth, parseISO, format } from 'date-fns';
+import { CartesianChart, Bar, CartesianAxis } from 'victory-native';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CHART_WIDTH = SCREEN_WIDTH - 56;
 
-// --- Constants & Cache Keys ---
-const CACHE_KEY_DIVIDENDS = 'global_dividend_data_cache';
-const CACHE_KEY_MARKET = 'market_data_cache';
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
-interface Portfolio {
-  id: string;
-  name: string;
+interface PortfolioItem { id: string; name: string; }
+interface DividendEvent { date: string; amount: number; totalForHolding: number; currency: string; }
+interface StockDividendData {
+  ticker: string; name: string; quantity: number;
+  dividends: DividendEvent[];
+  totalDividends: number; totalValueForHolding: number;
+  currency: string; country: string;
 }
+
+const CACHE_KEY_DIV = 'global_dividend_data_cache_v2';
+const CACHE_KEY_MKT = 'market_data_cache_v2';
+const CACHE_KEY_HIST = 'historical_price_cache_v7';
+const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 export default function DividendsScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
 
-  // 6.1 State Management
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isKrwMode, setIsKrwMode] = useState(true);
   const [isAfterTax, setIsAfterTax] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(null); // null = Annual view
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [portfolios, setPortfolios] = useState<PortfolioItem[]>([]);
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
-  
-  const [stockDividends, setStockDividends] = useState<StockDividend[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, any>>({});
 
-  // --- Initial Data Load & Portfolios ---
+  // ── Portfolios ──
   useEffect(() => {
     if (!session) return;
-    const loadInit = async () => {
-      const { data, error } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
-      if (data && data.length > 0) {
-        setPortfolios(data);
-        setSelectedPortfolioId(data[0].id);
-      }
-    };
-    loadInit();
+    (async () => {
+      const { data } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
+      if (data?.length) { setPortfolios(data); setSelectedPortfolioId(data[0].id); }
+    })();
   }, [session]);
 
-  // 6.2 Data Fetch Logic (useEffect #1)
-  const fetchDividends = useCallback(async (portfolioId: string) => {
-    if (!portfolioId) return;
+  // ── Fetch dividends ──
+  const fetchDividends = useCallback(async (pid: string) => {
+    if (!pid) return;
     setLoading(true);
+    setError(null);
     try {
-      // 1. Check Cache
-      const cacheStr = await AsyncStorage.getItem(CACHE_KEY_DIVIDENDS);
+      // Check cache
+      const cacheStr = await AsyncStorage.getItem(CACHE_KEY_DIV);
       const cache = cacheStr ? JSON.parse(cacheStr) : { items: {} };
-      const item = cache.items[portfolioId];
-      
-      const isFresh = item && (Date.now() - item.last_updated < CACHE_TTL);
-      
+      const cached = cache.items[pid];
+      const isFresh = cached?.data?.length && Date.now() - (cached.ts || cached.last_updated || 0) < CACHE_TTL;
+
       if (isFresh) {
-        setStockDividends(item.dividends);
-        // Load market data from cache too
-        const marketStr = await AsyncStorage.getItem(CACHE_KEY_MARKET);
-        if (marketStr) {
-          const market = JSON.parse(marketStr);
-          setStockPrices(market.prices || {});
-          setExchangeRates(market.exchangeRates || { usdkrw: 1400, jpykrw: 9.5 });
-        }
-        setLoading(false);
-        return;
+        setStockDividends(cached.data);
+      } else {
+        const resp = await fetch(`/api/portfolio/${pid}/dividends`);
+        if (resp.status === 502) throw new Error('JP 데이터 오류');
+        if (!resp.ok) throw new Error(`API ${resp.status}`);
+        const data = await resp.json();
+        setStockDividends(data);
+        cache.items[pid] = { ts: Date.now(), data };
+        await AsyncStorage.setItem(CACHE_KEY_DIV, JSON.stringify(cache));
       }
 
-      // 2. Fetch API
-      const response = await fetch(`/api/portfolio/${portfolioId}/dividends`);
-      if (response.status === 502) throw new Error('Japan Data Error (Cache Retained)');
-      const dividends = await response.json();
-      
-      // 3. Merge & Cache
-      setStockDividends(dividends);
-      cache.items[portfolioId] = {
-        last_updated: Date.now(),
-        dividends
-      };
-      await AsyncStorage.setItem(CACHE_KEY_DIVIDENDS, JSON.stringify(cache));
+      // Load market cache
+      const mktStr = await AsyncStorage.getItem(CACHE_KEY_MKT);
+      if (mktStr) {
+        const mkt = JSON.parse(mktStr);
+        if (mkt.prices) setStockPrices(mkt.prices);
+        if (mkt.exchangeRates) setExchangeRates(mkt.exchangeRates);
+      }
 
-      // 4. Update Prices
-      const tickers = [...new Set(dividends.map((d: any) => d.ticker))];
-      const priceRes = await fetch('/api/refresh-prices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tickers })
-      });
-      const priceData = await priceRes.json();
-      setStockPrices(priceData.prices);
-      setExchangeRates(priceData.exchangeRates);
-      await AsyncStorage.setItem(CACHE_KEY_MARKET, JSON.stringify(priceData));
-
+      // Refresh prices if missing
+      if (stockDividends.length === 0) {
+        fetchPrices();
+      }
     } catch (e: any) {
       setError(e.message);
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [stockDividends.length]);
 
-  useEffect(() => {
-    if (selectedPortfolioId) fetchDividends(selectedPortfolioId);
-  }, [selectedPortfolioId, fetchDividends]);
+  useEffect(() => { if (selectedPortfolioId) fetchDividends(selectedPortfolioId); }, [selectedPortfolioId, fetchDividends]);
 
-  // Real-time Update Listener
-  useEffect(() => {
-    const handlePriceUpdate = (e: any) => {
-      if (e.detail?.prices) {
-        setStockPrices(prev => ({ ...prev, ...e.detail.prices }));
+  const fetchPrices = useCallback(async () => {
+    if (stockDividends.length === 0) return;
+    try {
+      const tickers = [...new Set(stockDividends.map(d => d.ticker)), 'USDKRW=X', 'JPYKRW=X'];
+      const resp = await fetch('/api/refresh-prices', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.prices) setStockPrices(data.prices);
+        if (data.exchangeRates) setExchangeRates(data.exchangeRates);
+        await AsyncStorage.setItem(CACHE_KEY_MKT, JSON.stringify(data));
       }
-      if (e.detail?.exchangeRates) {
-        setExchangeRates(prev => ({ ...prev, ...e.detail.exchangeRates }));
-      }
-    };
-    if (typeof window !== 'undefined' && window.addEventListener) {
-      window.addEventListener('pricesUpdated', handlePriceUpdate);
-      return () => window.removeEventListener('pricesUpdated', handlePriceUpdate as EventListener);
-    }
-  }, []);
+    } catch (e: any) { console.warn('Price fetch failed:', e.message); }
+  }, [stockDividends]);
 
-  // 6.3 Historical Prices (useEffect #2)
+  // ── Historical prices ──
   useEffect(() => {
     if (stockDividends.length === 0 || !selectedPortfolioId) return;
-    
-    const fetchHistorical = async () => {
-      const tickers = [...new Set(stockDividends.map(d => d.ticker))];
-      const historical: Record<string, any> = {};
-      
-      for (const ticker of tickers) {
-        const start = Math.floor(Date.now() / 1000) - (365 * 60 * 60 * 24);
-        const end = Math.floor(Date.now() / 1000);
-        const res = await fetch(`/api/historical?ticker=${ticker}&period1=${start}&period2=${end}`);
-        const data = await res.json();
-        
-        // Process last year same month price
-        const lastYearDate = format(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
-        historical[ticker] = {
-          dividendDatePrices: data,
-          lastYearSameMonthPrice: data[lastYearDate] || 0
-        };
+    const run = async () => {
+      const ck = `${CACHE_KEY_HIST}_${selectedPortfolioId}`;
+      const cached = await AsyncStorage.getItem(ck);
+      if (cached) {
+        try {
+          const p = JSON.parse(cached);
+          if (Date.now() - (p.ts || 0) < CACHE_TTL) { setHistoricalPrices(p.data); return; }
+        } catch { /* ignore */ }
       }
-      setHistoricalPrices(historical);
+      const tickers = [...new Set(stockDividends.map(d => d.ticker))];
+      const hist: Record<string, any> = {};
+      for (const t of tickers) {
+        try {
+          const start = Math.floor(Date.now() / 1000) - (365 * 24 * 60 * 60);
+          const end = Math.floor(Date.now() / 1000);
+          const res = await fetch(`/api/historical?ticker=${t}&period1=${start}&period2=${end}`);
+          if (res.ok) {
+            const d = await res.json();
+            const ly = new Date(); ly.setFullYear(ly.getFullYear() - 1);
+            hist[t] = { dividendDatePrices: d || {}, lastYearSameMonthPrice: d?.[format(ly, 'yyyy-MM-dd')] || null };
+          }
+        } catch {}
+      }
+      setHistoricalPrices(hist);
+      await AsyncStorage.setItem(ck, JSON.stringify({ ts: Date.now(), data: hist }));
     };
-
-    const timer = setTimeout(fetchHistorical, 500); // 500ms delay
+    const timer = setTimeout(run, 500);
     return () => clearTimeout(timer);
   }, [stockDividends, selectedPortfolioId]);
 
-  // 6.7 Monthly Data Aggregation (useMemo)
-  const monthlyData = useMemo(() => {
-    const months = Array.from({ length: 12 }, (_, i) => i);
-    const currentYear = new Date().getFullYear();
+  // ── Helpers ──
+  const convKrw = useCallback((amt: number, cur: string) => {
+    if (cur === 'KRW') return amt;
+    if (cur === 'USD') return amt * exchangeRates.usdkrw;
+    if (cur === 'JPY') return amt * exchangeRates.jpykrw;
+    return amt;
+  }, [exchangeRates]);
+
+  const fmtC = useCallback((amt: number, cur: string, forceKrw = false) => {
+    if (forceKrw || isKrwMode) return formatCurrency(convKrw(amt, cur));
+    return formatCurrency(amt, cur);
+  }, [isKrwMode, convKrw]);
+
+  // ── Monthly aggregation ──
+  const monthlyData: { month: number; label: string; value: number; type: 'actual' | 'estimate' }[] = useMemo(() => {
+    if (!stockDividends.length) return [];
+    const cy = new Date().getFullYear();
     const today = new Date();
-
-    return months.map(month => {
-      const targetDate = new Date(currentYear, month, 15);
-      const isPastMonth = isPast(endOfMonth(targetDate)) && !isSameMonth(targetDate, today);
-      
-      let totalValue = 0;
-      let hasActual = false;
-
-      const items = [...new Set(stockDividends.map(d => d.ticker))].map(ticker => {
-        const estimate = calculateLatestTrendEstimate(
-          stockDividends.filter(d => d.ticker === ticker),
-          historicalPrices,
-          stockPrices[ticker] || 0,
-          month,
-          currentYear,
-          ticker,
-          isKrwMode,
-          isKrwMode ? exchangeRates.usdkrw : 1
-        );
-
-        if (estimate.calculationMethod === 'actual') hasActual = true;
-        
-        const rate = isKrwMode ? (ticker.endsWith('.T') ? exchangeRates.jpykrw / 100 : exchangeRates.usdkrw) : 1;
-        const tax = getTaxRate(ticker.includes('.') ? 'US' : 'KR', isAfterTax); // Simplified logic
-        
-        return estimate.amount * rate * tax;
-      });
-
-      totalValue = items.reduce((a, b) => a + b, 0);
-
-      return {
-        month: month + 1,
-        value: totalValue,
-        type: isPastMonth ? 'actual' : (hasActual ? 'actual' : 'estimate'),
-        label: `${month + 1}월`
-      };
+    return Array.from({ length: 12 }, (_, m) => {
+      let total = 0;
+      for (const sd of stockDividends) {
+        const tax = getTaxRate(sd.country, isAfterTax);
+        // actual?
+        const act = sd.dividends.find(d => { const dd = new Date(d.date); return dd.getFullYear() === cy && dd.getMonth() === m; });
+        if (act) {
+          total += convKrw(act.totalForHolding * tax, sd.currency);
+        } else {
+          const est = calculateLatestTrendEstimate(
+            sd.dividends as any, historicalPrices,
+            stockPrices[sd.ticker] || 0, m, cy, sd.ticker,
+            isKrwMode, 1
+          );
+          total += convKrw(est.amount * sd.quantity * tax, sd.currency);
+        }
+      }
+      const md = new Date(cy, m, 15);
+      const past = isPast(endOfMonth(md)) && !isSameMonth(md, today);
+      return { month: m, label: `${m + 1}월`, value: Math.round(total), type: past ? 'actual' : 'estimate' };
     });
-  }, [stockDividends, historicalPrices, stockPrices, exchangeRates, isKrwMode, isAfterTax]);
+  }, [stockDividends, historicalPrices, stockPrices, isKrwMode, isAfterTax, convKrw]);
 
-  const totalAnnual = useMemo(() => monthlyData.reduce((a, b) => a + b.value, 0), [monthlyData]);
-  const selectedMonthData = useMemo(() => selectedMonth !== null ? monthlyData[selectedMonth] : null, [selectedMonth, monthlyData]);
+  const totalAnnual = monthlyData.reduce((s, m) => s + m.value, 0);
+  const monthVal = selectedMonth !== null ? monthlyData[selectedMonth]?.value ?? 0 : 0;
 
-  // 6.8 Filtered Stocks
-  const stockList = useMemo(() => {
-    const tickers = [...new Set(stockDividends.map(d => d.ticker))];
-    const currentYear = new Date().getFullYear();
-
-    return tickers.map(ticker => {
-      const tickerDivs = stockDividends.filter(d => d.ticker === ticker);
-      const analysis = calculateDividendYield(tickerDivs, stockPrices[ticker] || 0, ticker);
-      
-      // If month selected, get that month estimate
-      const monthlyEstimates = Array.from({ length: 12 }, (_, i) => 
-        calculateLatestTrendEstimate(tickerDivs, historicalPrices, stockPrices[ticker] || 0, i, currentYear, ticker, isKrwMode, 1)
+  // ── Stock analysis list ──
+  const analysisList = useMemo(() => {
+    if (!stockDividends.length) return [];
+    const cy = new Date().getFullYear();
+    return stockDividends.map(sd => {
+      const tax = getTaxRate(sd.country, isAfterTax);
+      const a = calculateDividendYield(sd.dividends as any, stockPrices[sd.ticker] || 0, sd.ticker);
+      const estimates: TrendEstimate[] = Array.from({ length: 12 }, (_, m) =>
+        calculateLatestTrendEstimate(sd.dividends as any, historicalPrices, stockPrices[sd.ticker] || 0, m, cy, sd.ticker, isKrwMode, 1)
       );
+      const annualKrw = estimates.reduce((s, e) => s + convKrw(e.amount * sd.quantity * tax, sd.currency), 0);
+      return { ticker: sd.ticker, name: sd.name, country: sd.country, currency: sd.currency, quantity: sd.quantity, analysis: a, estimates, tax, annualKrw };
+    }).sort((a, b) => b.annualKrw - a.annualKrw);
+  }, [stockDividends, stockPrices, historicalPrices, isKrwMode, isAfterTax, convKrw]);
 
-      const country = ticker.endsWith('.T') ? 'JP' : (ticker.includes('.') ? 'US' : 'KR');
-      const taxRate = getTaxRate(country, isAfterTax);
-      const fxRate = isKrwMode ? (country === 'JP' ? exchangeRates.jpykrw / 100 : (country === 'KR' ? 1 : exchangeRates.usdkrw)) : 1;
+  const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
+  const isPos = totalAnnual >= 0;
 
-      return {
-        ticker,
-        analysis,
-        monthlyEstimates,
-        taxRate,
-        fxRate,
-        country
-      };
-    }).filter(s => selectedMonth === null || s.monthlyEstimates[selectedMonth].amount > 0);
-  }, [stockDividends, stockPrices, historicalPrices, selectedMonth, isKrwMode, isAfterTax, exchangeRates]);
-
-  if (loading && stockDividends.length === 0) {
+  if (loading && !stockDividends.length) {
     return (
-      <View style={[styles.container, { justifyContent: 'center' }]}>
+      <View style={[styles.c, { paddingTop: insets.top, justifyContent: 'center' }]}>
         <ActivityIndicator size="large" color="#22c55e" />
-        <Text style={{ color: '#71717a', marginTop: 12, textAlign: 'center' }}>배당 트렌드를 분석하는 중...</Text>
+        <Text style={styles.ld}>배당 데이터를 불러오는 중...</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        
-        {/* 7.1 상단 컨트롤바 */}
-        <View style={styles.headerControls}>
-          <TouchableOpacity onPress={() => setIsAfterTax(!isAfterTax)} style={[styles.pillButton, isAfterTax && styles.pillButtonActive]}>
+    <View style={[styles.c, { paddingTop: insets.top }]}>
+      {/* Portfolio selector */}
+      <View style={styles.ph}>
+        <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.pbtn}>
+          <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
+          <ChevronDown size={16} color="#71717a" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}>
+        {/* Controls */}
+        <View style={styles.row}>
+          <TouchableOpacity onPress={() => setIsAfterTax(!isAfterTax)} style={[styles.pill, isAfterTax && styles.pillA]}>
             <ShieldCheck size={14} color={isAfterTax ? '#052e16' : '#71717a'} />
-            <Text style={[styles.pillText, isAfterTax && styles.pillTextActive]}>{isAfterTax ? '세후 수령액' : '세전 금액'}</Text>
+            <Text style={[styles.ptl, isAfterTax && styles.pila]}>세후 수령액</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setIsKrwMode(!isKrwMode)} style={[styles.pillButton, styles.mlAuto]}>
-            <Globe size={14} color="#71717a" />
-            <Text style={styles.pillText}>{isKrwMode ? 'KRW (₩)' : 'USD ($)'}</Text>
+          <TouchableOpacity onPress={() => setIsKrwMode(!isKrwMode)} style={[styles.pill, { marginLeft: 'auto' }]}>
+            <Info size={14} color="#71717a" />
+            <Text style={styles.ptl}>{isKrwMode ? 'KRW (₩)' : '원본 통화'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* 7.2 연간 배당 흐름 차트 */}
-        <View style={styles.chartCard}>
-          <View style={styles.chartHeader}>
+        {/* Chart — simple bar chart in pure RN */}
+        <View style={styles.card}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <View>
-              <Text style={styles.chartTitle}>📊 연간 배당 흐름 및 예측</Text>
-              <Text style={styles.chartSubtitle}>✨ 최신 성장 트렌드 반영 모델</Text>
+              <Text style={styles.ct}>📊 연간 배당 흐름</Text>
+              <Text style={styles.cs}>트렌드 예측 모델</Text>
             </View>
-            <TrendingUp size={24} color="#27272a" style={styles.watermark} />
+            <TrendingUp size={24} color="#27272a" style={{ opacity: 0.3 }} />
           </View>
-          
-          <VictoryChart width={width - 56} height={180} padding={{ top: 20, bottom: 40, left: 10, right: 10 }} domainPadding={{ x: 20 }}>
-            <VictoryAxis 
-              style={{ 
-                axis: { stroke: 'transparent' }, 
-                tickLabels: { fill: '#3f3f46', fontSize: 10, fontWeight: '700' } 
-              }} 
+
+          {stockDividends.length > 0 ? (
+            <ChartBars
+              data={monthlyData}
+              selected={selectedMonth}
+              onSelect={setSelectedMonth}
             />
-            <VictoryBar 
-              data={monthlyData.map(d => ({ x: d.label, y: d.value, type: d.type }))} 
-              style={{ 
-                data: { 
-                  fill: ({ datum }) => datum.type === 'actual' ? '#4ade80' : '#3b82f6', 
-                  width: 10, 
-                  rx: 4 
-                } 
-              }} 
-              events={[{
-                target: "data",
-                eventHandlers: {
-                  onPress: () => {
-                    return [{
-                      target: "data",
-                      mutation: (props) => {
-                        const monthIdx = props.index;
-                        setSelectedMonth(selectedMonth === monthIdx ? null : monthIdx);
-                        return null;
-                      }
-                    }];
-                  }
-                }
-              }]}
-            />
-          </VictoryChart>
-          
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#4ade80' }]} />
-              <Text style={styles.legendText}>실제</Text>
+          ) : (
+            <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={styles.em}>배당 데이터가 없습니다</Text>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
-              <Text style={styles.legendText}>예측</Text>
+          )}
+
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, justifyContent: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ade80' }} /><Text style={{ fontSize: 10, color: '#52525b', fontWeight: '700' }}>실제</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' }} /><Text style={{ fontSize: 10, color: '#52525b', fontWeight: '700' }}>예측</Text>
             </View>
           </View>
         </View>
 
-        {/* 7.3 요약 카드 */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>
-              {selectedMonth !== null ? `${selectedMonth + 1}월 배당 리포트` : '연간 배향 요약'}
-            </Text>
-            <TouchableOpacity onPress={() => setSelectedMonth(null)} style={styles.viewToggle}>
-              <Text style={styles.viewToggleText}>{selectedMonth !== null ? '연간 통합' : '월별 상세'}</Text>
-            </TouchableOpacity>
+        {/* Summary */}
+        <View style={[styles.card, styles.summary]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={styles.st}>{selectedMonth !== null ? `${selectedMonth + 1}월 배당 리포트` : '2026 전체 배당'}</Text>
+            <View style={{ flexDirection: 'row', backgroundColor: '#09090b', borderRadius: 8, padding: 2 }}>
+              <TouchableOpacity onPress={() => setSelectedMonth(new Date().getMonth())} style={[styles.vt, selectedMonth !== null && styles.vta]}>
+                <Text style={[styles.vtl, selectedMonth !== null && styles.vtla]}>월별</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSelectedMonth(null)} style={[styles.vt, selectedMonth === null && styles.vta]}>
+                <Text style={[styles.vtl, selectedMonth === null && styles.vtla]}>연간</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={styles.summaryAmount}>
-            {isKrwMode ? formatCurrency(selectedMonth !== null ? selectedMonthData?.value || 0 : totalAnnual) : `$${(selectedMonth !== null ? (selectedMonthData?.value || 0) / exchangeRates.usdkrw : totalAnnual / exchangeRates.usdkrw).toFixed(2)}`}
-          </Text>
-          <View style={styles.summaryBadges}>
-            <View style={styles.badge}><Text style={styles.badgeText}>● 지급 완료 내역 포함</Text></View>
-            <View style={styles.badge}><Text style={styles.badgeText}>● AI 트렌드 예측 모델</Text></View>
+          <Text style={styles.sa}>{formatCurrency(selectedMonth !== null ? monthVal : totalAnnual)}</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={styles.bg}><View style={[styles.bd, { backgroundColor: '#4ade80' }]} /><Text style={styles.bgt}>지급 완료</Text></View>
+            <View style={styles.bg}><View style={[styles.bd, { backgroundColor: '#3b82f6' }]} /><Text style={styles.bgt}>트렌드 예측</Text></View>
           </View>
         </View>
 
-        {/* 7.4 종목별 분석 카드 */}
-        <Text style={styles.sectionTitle}>STOCK ANALYSIS</Text>
-        {stockList.map((stock, idx) => (
-          <View key={stock.ticker} style={styles.stockCard}>
-            <View style={styles.stockHeader}>
-              <View>
-                <Text style={styles.stockSymbol}>{stock.ticker}</Text>
-                <Text style={styles.stockInfo}>{stock.country === 'US' ? '미국 주식' : (stock.country === 'JP' ? '일본 주식' : '한국 주식')}</Text>
-              </View>
-              <Text style={styles.stockTotal}>
-                {isKrwMode ? 
-                  formatCurrency(stock.monthlyEstimates.reduce((a, b) => a + b.amount, 0) * stock.fxRate * stock.taxRate) : 
-                  `$${(stock.monthlyEstimates.reduce((a, b) => a + b.amount, 0) * (stock.fxRate / exchangeRates.usdkrw) * stock.taxRate).toFixed(2)}`
-                }
-              </Text>
-            </View>
+        {/* Stock list */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={styles.sect}>{selectedMonth !== null ? `${selectedMonth + 1}월 종목별` : '전체 배당 현황'}</Text>
+          <Text style={{ fontSize: 10, color: '#52525b', fontWeight: '800' }}>{filteredList.length}종목</Text>
+        </View>
 
-            {/* A. 배당수익률 박스 */}
-            <View style={styles.yieldBox}>
-              <View style={styles.yieldRow}>
-                <View style={[styles.yieldBadge, { backgroundColor: '#052e16' }]}>
-                  <Text style={[styles.yieldBadgeText, { color: '#4ade80' }]}>최근: {stock.analysis.singleYieldPercent.toFixed(2)}%</Text>
+        {filteredList.map((s: any) => {
+          const est = selectedMonth !== null ? s.estimates[selectedMonth] : null;
+          return (
+            <View key={s.ticker} style={styles.sc}>
+              <View style={styles.sh}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sn}>{s.name}</Text>
+                  <Text style={styles.sk}>{s.ticker} · {getFlag(s.country === 'JP' ? 'JP' : s.country === 'KR' ? 'KR' : 'US')} {s.quantity}주</Text>
                 </View>
-                <View style={[styles.yieldBadge, { backgroundColor: '#172554' }]}>
-                  <Text style={[styles.yieldBadgeText, { color: '#3b82f6' }]}>연환산: {stock.analysis.yieldPercent.toFixed(2)}%</Text>
-                </View>
+                <Text style={styles.stot}>{isKrwMode ? formatCurrency(s.annualKrw) : `${s.currency === 'USD' ? '$' : '¥'}${(s.annualKrw / (s.currency === 'USD' ? exchangeRates.usdkrw : exchangeRates.jpykrw)).toFixed(2)}`}</Text>
               </View>
-              <View style={styles.yieldGrid}>
-                <View>
-                  <Text style={styles.yieldGridLabel}>지급 주기</Text>
-                  <Text style={styles.yieldGridValue}>연 {stock.analysis.paymentsPerYear}회</Text>
-                </View>
-                <View>
-                  <Text style={styles.yieldGridLabel}>현재 시가</Text>
-                  <Text style={styles.yieldGridValue}>${stock.analysis.currentPrice.toFixed(2)}</Text>
-                </View>
-                <View>
-                  <Text style={styles.yieldGridLabel}>연 예상 배당</Text>
-                  <Text style={styles.yieldGridValue}>${stock.analysis.annualDividendPerShare.toFixed(2)}</Text>
-                </View>
-              </View>
-            </View>
 
-            {/* B. 지급 상태 행 (2026/Current Monthly) */}
-            {selectedMonth !== null && (
-              <View style={styles.statusRow}>
-                <View style={styles.flexRow}>
-                  <View style={[styles.statusDot, { backgroundColor: stock.monthlyEstimates[selectedMonth].calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }]} />
-                  <Text style={styles.statusText}>{stock.monthlyEstimates[selectedMonth].calculationMethod === 'actual' ? '지급 완료' : '예측 배당'}</Text>
+              {/* Yield */}
+              <View style={styles.yb}>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                  <View style={[styles.ybg, { backgroundColor: '#052e16' }]}><Text style={[styles.ybt, { color: '#4ade80' }]}>최근 {s.analysis.singleYieldPercent.toFixed(2)}%</Text></View>
+                  {s.analysis.paymentsPerYear > 0 && (
+                    <View style={[styles.ybg, { backgroundColor: '#172554' }]}><Text style={[styles.ybt, { color: '#3b82f6' }]}>연환산 {s.analysis.yieldPercent.toFixed(2)}%</Text></View>
+                  )}
                 </View>
-                <Text style={styles.statusAmount}>
-                  {isKrwMode ? formatCurrency(stock.monthlyEstimates[selectedMonth].amount * stock.fxRate * stock.taxRate) : `$${(stock.monthlyEstimates[selectedMonth].amount * (stock.fxRate / exchangeRates.usdkrw) * stock.taxRate).toFixed(2)}`}
-                </Text>
-              </View>
-            )}
-
-            {/* C. 예측 vs 실제 비교 (실제 배당 시 예측치도 계산하여 표시) */}
-            {selectedMonth !== null && stock.monthlyEstimates[selectedMonth].calculationMethod === 'actual' && (
-              <View style={styles.detailBox}>
-                <Text style={styles.detailBoxTitle}>예측 vs 실제 비교</Text>
-                <View style={styles.comparisonGrid}>
-                  <View style={styles.compCol}>
-                    <Text style={styles.compLabel}>예측 배당 (Avg)</Text>
-                    <Text style={styles.compValue}>$—</Text> 
-                  </View>
-                  <View style={styles.compCol}>
-                    <Text style={styles.compLabel}>실제 배당</Text>
-                    <Text style={styles.compValue}>${(stock.monthlyEstimates[selectedMonth].amount).toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.compCol}>
-                    <Text style={styles.compLabel}>차이</Text>
-                    <Text style={[styles.compValue, { color: '#4ade80' }]}>—</Text>
-                  </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View><Text style={styles.yl}>지급주기</Text><Text style={styles.yv}>{s.analysis.isMonthly ? '매월' : `연 ${s.analysis.paymentsPerYear || 4}회`}</Text></View>
+                  <View><Text style={styles.yl}>현재가</Text><Text style={styles.yv}>{formatCurrency(s.analysis.currentPrice, s.currency)}</Text></View>
+                  <View><Text style={styles.yl}>연간예상</Text><Text style={[styles.yv, { color: '#22c55e' }]}>{formatCurrency(s.analysis.annualDividendPerShare, s.currency)}</Text></View>
                 </View>
               </View>
-            )}
 
-            {/* D. 트렌드 분석 근거 (예측 종목) */}
-            {selectedMonth !== null && stock.monthlyEstimates[selectedMonth].calculationMethod !== 'actual' && (
-              <View style={styles.detailBox}>
-                <Text style={styles.detailBoxTitle}>트렌드 분석 근거 (1yr)</Text>
-                <Text style={styles.detailText}>{stock.monthlyEstimates[selectedMonth].calculationFormula}</Text>
-                <View style={styles.comparisonGrid}>
-                  <View style={styles.compCol}>
-                    <Text style={styles.compLabel}>종가 기준</Text>
-                    <Text style={styles.compValue}>${(stock.monthlyEstimates[selectedMonth].lastYearSameMonthPrice || stock.analysis.currentPrice).toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.compCol}>
-                    <Text style={styles.compLabel}>적용 수익률</Text>
-                    <Text style={styles.compValue}>{(stock.monthlyEstimates[selectedMonth].lastYearSameMonthYield || stock.analysis.singleYieldPercent).toFixed(2)}%</Text>
-                  </View>
+              {/* Monthly or single month */}
+              {selectedMonth === null ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                  {s.estimates.map((e: any, i: number) => e.amount > 0 ? (
+                    <TouchableOpacity key={i} onPress={() => setSelectedMonth(i)} style={[
+                      { width: (SCREEN_WIDTH - 104) / 3, padding: 8, borderRadius: 10, alignItems: 'center', borderWidth: 1 },
+                      { backgroundColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.08)' : 'rgba(59,130,246,0.08)', borderColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.15)' : 'rgba(59,130,246,0.15)' }
+                    ]}>
+                      <Text style={{ fontSize: 9, color: '#71717a', fontWeight: '700' }}>{i + 1}월</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: e.calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }}>
+                        {formatCurrency(convKrw(e.amount * s.quantity * s.tax, s.currency))}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null)}
                 </View>
-              </View>
-            )}
-
-            {/* E. 월별 내역 (연간 뷰) */}
-            {selectedMonth === null && (
-              <View style={styles.monthlyGrid}>
-                {stock.monthlyEstimates.map((est, mIdx) => est.amount > 0 ? (
-                  <View key={mIdx} style={[styles.monthlyCell, { backgroundColor: est.calculationMethod === 'actual' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(59, 130, 246, 0.1)' }]}>
-                    <Text style={styles.cellMonth}>{mIdx + 1}월</Text>
-                    <Text style={[styles.cellAmount, { color: est.calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }]}>
-                      {isKrwMode ? formatCurrency(est.amount * stock.fxRate * stock.taxRate) : `$${(est.amount * stock.taxRate).toFixed(2)}`}
+              ) : est && est.amount > 0 ? (
+                <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#27272a', paddingTop: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: est.calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }} />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#f4f4f5' }}>
+                        {est.calculationMethod === 'actual' ? '지급 완료' : est.calculationMethod === 'price_trend' ? '주가 기반 예측' : '배당 이력 기반'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5' }}>
+                      {formatCurrency(convKrw(est.amount * s.quantity * s.tax, s.currency))}
                     </Text>
                   </View>
-                ) : null)}
-              </View>
-            )}
+                  {est.calculationMethod !== 'actual' && est.calculationFormula && (
+                    <View style={{ marginTop: 8, backgroundColor: '#09090b', borderRadius: 10, padding: 8 }}>
+                      <Text style={{ fontSize: 10, color: '#71717a' }}>{est.calculationFormula}</Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+
+        {filteredList.length === 0 && stockDividends.length > 0 && (
+          <View style={{ padding: 40, alignItems: 'center' }}><Text style={styles.em}>이 달에 배당이 없습니다</Text></View>
+        )}
+
+        {error && (
+          <View style={{ padding: 12, backgroundColor: '#1c0a0a', borderRadius: 12, borderWidth: 1, borderColor: '#7f1d1d', marginBottom: 16 }}>
+            <Text style={{ color: '#fca5a5', fontSize: 12, fontWeight: '700' }}>⚠️ {error}</Text>
           </View>
-        ))}
-        
-        <View style={{ height: 100 }} />
+        )}
+
+        <View style={{ height: 120 }} />
       </ScrollView>
+
+      {/* Portfolio picker modal */}
+      <Modal visible={showPicker} transparent animationType="fade" onRequestClose={() => setShowPicker(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowPicker(false)}>
+          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
+            {portfolios.map(p => (
+              <TouchableOpacity key={p.id} onPress={() => { setSelectedPortfolioId(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: p.id === selectedPortfolioId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
+                {p.id === selectedPortfolioId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
+/* ═══════════════════════════════════════════
+   Simple bar chart (pure RN, no Victory)
+   ═══════════════════════════════════════════ */
+function ChartBars({ data, selected, onSelect }: { data: any[]; selected: number | null; onSelect: (m: number) => void }) {
+  const maxVal = Math.max(...data.map(m => m.value), 1);
+  const barH = 170;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: barH, justifyContent: 'space-between', marginTop: 12 }}>
+      {data.map((d: any) => {
+        const h = Math.max((d.value / maxVal) * (barH - 24), 2);
+        const col = d.type === 'actual' ? '#4ade80' : '#3b82f6';
+        const isActive = selected !== null && selected === d.month;
+        return (
+          <TouchableOpacity
+            key={d.month}
+            onPress={() => onSelect(d.month)}
+            style={{
+              flex: 1, alignItems: 'center', justifyContent: 'flex-end',
+              opacity: selected !== null && !isActive ? 0.4 : 0.9,
+            }}
+          >
+            <View style={{ width: '60%', height: h, backgroundColor: col, borderRadius: 4, minWidth: 8 }} />
+            <Text style={{ fontSize: 8, color: '#52525b', fontWeight: '700', marginTop: 4 }}>{d.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Styles
+   ═══════════════════════════════════════════ */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  headerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
-  },
-  pillButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  pillButtonActive: {
-    backgroundColor: '#22c55e',
-    borderColor: '#22c55e',
-  },
-  pillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#71717a',
-  },
-  pillTextActive: {
-    color: '#052e16',
-  },
-  mlAuto: {
-    marginLeft: 'auto',
-  },
-  chartCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 32,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginBottom: 24,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  chartTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#f4f4f5',
-  },
-  chartSubtitle: {
-    fontSize: 10,
-    color: '#71717a',
-    marginTop: 4,
-  },
-  watermark: {
-    opacity: 0.2,
-  },
-  legend: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-    justifyContent: 'center',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: 10,
-    color: '#52525b',
-    fontWeight: '700',
-  },
-  summaryCard: {
-    marginBottom: 32,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#71717a',
-    letterSpacing: 1,
-  },
-  viewToggle: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#27272a',
-  },
-  viewToggleText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#a1a1aa',
-  },
-  summaryAmount: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#f4f4f5',
-    letterSpacing: -2,
-  },
-  summaryBadges: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  badge: {
-    backgroundColor: '#18181b',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  badgeText: {
-    fontSize: 9,
-    color: '#52525b',
-    fontWeight: '800',
-  },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#3f3f46',
-    letterSpacing: 2,
-    marginBottom: 16,
-  },
-  stockCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginBottom: 16,
-  },
-  stockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  stockSymbol: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#f4f4f5',
-  },
-  stockInfo: {
-    fontSize: 11,
-    color: '#71717a',
-    marginTop: 2,
-  },
-  stockTotal: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#f4f4f5',
-  },
-  yieldBox: {
-    backgroundColor: '#09090b',
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 16,
-  },
-  yieldRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  yieldBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  yieldBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  yieldGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  yieldGridLabel: {
-    fontSize: 9,
-    color: '#52525b',
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  yieldGridValue: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#a1a1aa',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#27272a',
-  },
-  flexRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
-  statusAmount: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#f4f4f5',
-  },
-  monthlyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 16,
-  },
-  monthlyCell: {
-    width: (width - 110) / 3,
-    padding: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cellMonth: {
-    fontSize: 10,
-    color: '#71717a',
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  cellAmount: {
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  detailBox: {
-    backgroundColor: '#09090b',
-    borderRadius: 16,
-    padding: 12,
-    marginTop: 16,
-  },
-  detailBoxTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#a1a1aa',
-    marginBottom: 8,
-  },
-  detailText: {
-    fontSize: 10,
-    color: '#71717a',
-    marginBottom: 8,
-  },
-  comparisonGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  compCol: {
-    flex: 1,
-  },
-  compLabel: {
-    fontSize: 9,
-    color: '#52525b',
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  compValue: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#f4f4f5',
-  }
+  c: { flex: 1, backgroundColor: '#09090b' },
+  ld: { color: '#71717a', marginTop: 12, fontSize: 13, fontWeight: '700' },
+  em: { color: '#52525b', fontSize: 13, fontWeight: '700' },
+  ph: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
+  pbtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  ptxt: { fontSize: 14, fontWeight: '800', color: '#e4e4e7' },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a' },
+  pillA: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
+  ptl: { fontSize: 11, fontWeight: '800', color: '#71717a' },
+  pila: { color: '#052e16' },
+  card: { backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 16 },
+  summary: { backgroundColor: '#18181b' },
+  ct: { fontSize: 14, fontWeight: '900', color: '#f4f4f5' },
+  cs: { fontSize: 9, color: '#71717a', marginTop: 2, fontWeight: '700' },
+  st: { fontSize: 10, fontWeight: '900', color: '#71717a', letterSpacing: 1 },
+  sa: { fontSize: 42, fontWeight: '900', color: '#f4f4f5', letterSpacing: -2, marginBottom: 10 },
+  vt: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  vta: { backgroundColor: '#22c55e' },
+  vtl: { fontSize: 9, fontWeight: '700', color: '#71717a' },
+  vtla: { color: '#052e16' },
+  bg: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#09090b', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#27272a' },
+  bd: { width: 6, height: 6, borderRadius: 3 },
+  bgt: { fontSize: 9, color: '#52525b', fontWeight: '800' },
+  sect: { fontSize: 10, fontWeight: '900', color: '#3f3f46', letterSpacing: 2 },
+  sc: { backgroundColor: '#18181b', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#27272a', marginBottom: 12 },
+  sh: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  sn: { fontSize: 15, fontWeight: '900', color: '#f4f4f5' },
+  sk: { fontSize: 10, color: '#71717a', fontWeight: '700', marginTop: 2 },
+  stot: { fontSize: 16, fontWeight: '900', color: '#f4f4f5' },
+  yb: { backgroundColor: '#09090b', borderRadius: 12, padding: 10 },
+  ybg: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  ybt: { fontSize: 10, fontWeight: '900' },
+  yl: { fontSize: 8, color: '#52525b', fontWeight: '700', marginBottom: 2 },
+  yv: { fontSize: 11, fontWeight: '800', color: '#a1a1aa' },
 });

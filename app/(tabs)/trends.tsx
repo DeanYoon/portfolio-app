@@ -4,9 +4,10 @@ import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
-import { VictoryChart, VictoryAxis, VictoryArea, VictoryVoronoiContainer, VictoryScatter } from 'victory-native';
+// VictoryNative imports removed for v36 compatibility
+// Placeholder chart used temporarily
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
-import { Svg, Defs, LinearGradient, Stop } from 'react-native-svg';
+// Svg imports removed
 
 const { width } = Dimensions.get('window');
 
@@ -133,24 +134,6 @@ export default function TrendsScreen() {
     return { type: 'RANGE', start: shortDate(start.snapshot_date), end: shortDate(end.snapshot_date), diff, roi, iStart, iEnd };
   }, [activeIndices, chartData]);
 
-  const onTouch = (evt: any) => {
-    const touches = evt.nativeEvent.touches;
-    const padding = 20;
-    const contentWidth = containerWidth - padding * 2;
-    const mapXtoIdx = (x: number) => {
-       const idx = Math.round((Math.max(0, Math.min(x - padding, contentWidth)) / contentWidth) * (chartData.length - 1));
-       return isNaN(idx) ? 0 : idx;
-    };
-
-    if (touches.length === 1) {
-      setActiveIndices([mapXtoIdx(touches[0].locationX)]);
-    } else if (touches.length === 2) {
-      setActiveIndices([mapXtoIdx(touches[0].locationX), mapXtoIdx(touches[1].locationX)]);
-    } else {
-      setActiveIndices([]);
-    }
-  };
-
   if (loading) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
 
   return (
@@ -178,45 +161,9 @@ export default function TrendsScreen() {
           </View>
         </View>
 
-        {/* 차트 영역 */}
-        <View onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)} onTouchStart={onTouch} onTouchMove={onTouch} onTouchEnd={() => setActiveIndices([])} style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 12, borderWidth: 1, borderColor: '#27272a', marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-          
-          {analysis && (
-            <View style={{ position: 'absolute', top: 12, left: 12, right: 12, backgroundColor: 'rgba(9,9,11,0.95)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#22c55e', zIndex: 100, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
-               {analysis.type === 'SINGLE' ? (
-                 <>
-                   <Text style={{ fontSize: 11, fontWeight: '800', color: '#a1a1aa' }}>{analysis.date}</Text>
-                   <Text style={{ fontSize: 15, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(analysis.value)}</Text>
-                 </>
-               ) : (
-                 <>
-                   <Text style={{ fontSize: 10, color: '#a1a1aa' }}>{analysis.start}..{analysis.end}</Text>
-                   <View style={{ alignItems: 'flex-end' }}>
-                     <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(analysis.diff)}</Text>
-                     <Text style={{ fontSize: 11, fontWeight: '800', color: analysis.diff >= 0 ? '#ef4444' : '#3b82f6' }}>{formatRate(analysis.roi)}</Text>
-                   </View>
-                 </>
-               )}
-            </View>
-          )}
-
-          {chartData.length > 1 ? (
-            <View pointerEvents="none">
-              <Svg style={{ height: 0 }}><Defs><LinearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%"><Stop offset="0%" stopColor="#22c55e" stopOpacity="0.1" /><Stop offset="100%" stopColor="#22c55e" stopOpacity="0" /></LinearGradient></Defs></Svg>
-              <VictoryChart width={containerWidth - 24} height={180} padding={{ top: 10, bottom: 25, left: 0, right: 0 }} domain={{ y: yDomain as any }}>
-                <VictoryAxis style={{ axis: { stroke: 'transparent' }, tickLabels: { fill: '#3f3f46', fontSize: 9, fontWeight: '700' } }} tickValues={chartData.length > 3 ? [chartData[0].x, chartData[Math.floor(chartData.length/2)].x, chartData[chartData.length-1].x] : undefined} tickFormat={(x) => `${new Date(x).getMonth() + 1}/${new Date(x).getDate()}`} />
-                <VictoryArea name="area" data={chartData} interpolation="monotoneX" style={{ data: { fill: 'url(#gradient)', stroke: '#22c55e', strokeWidth: 2 } }} />
-                
-                {analysis?.type === 'RANGE' && (
-                   <VictoryArea data={chartData.slice(analysis.iStart, analysis.iEnd + 1)} style={{ data: { fill: 'rgba(34, 197, 94, 0.3)', stroke: '#22c55e', strokeWidth: 3 } }} interpolation="monotoneX" />
-                )}
-
-                <VictoryScatter name="scatter" data={chartData} size={({ index }) => activeIndices.includes(index) ? 6 : 0} style={{ data: { fill: '#22c55e', stroke: '#f4f4f5', strokeWidth: 2 } }} />
-              </VictoryChart>
-            </View>
-          ) : (
-            <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#52525b', fontSize: 13 }}>데이터 기록이 필요합니다.</Text></View>
-          )}
+        {/* 차트 placeholder */}
+        <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 12, borderWidth: 1, borderColor: '#27272a', marginBottom: 20, height: 200, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#52525b', fontSize: 13 }}>차트 준비 중</Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>

@@ -107,7 +107,7 @@ export const calculateLatestTrendEstimate = (
   dividends: StockDividend[],
   historicalPrices: Record<string, any>,
   currentPrice: number,
-  targetMonth: number, // 0-11
+  targetMonth: number,
   currentYear: number,
   ticker: string,
   isKrwMode: boolean,

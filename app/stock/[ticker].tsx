@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide-react-native';
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
-import { VictoryLine, VictoryChart, VictoryAxis, VictoryArea, VictoryVoronoiContainer } from 'victory-native';
+// VictoryNative imports removed for v36 compatibility; placeholder chart used
 
 const { width } = Dimensions.get('window');
 
@@ -133,21 +133,9 @@ export default function StockDetailScreen() {
             </Text>
           </View>
 
-          {chartData.length > 0 && (
-            <VictoryChart
-              width={width - 72}
-              height={180}
-              padding={{ top: 10, bottom: 30, left: 0, right: 0 }}
-              containerComponent={<VictoryVoronoiContainer />}
-            >
-              <VictoryAxis style={{ axis: { stroke: 'transparent' }, tickLabels: { fill: 'transparent' } }} />
-              <VictoryArea
-                data={chartData}
-                style={{ data: { fill: 'rgba(34, 197, 94, 0.1)', stroke: '#22c55e', strokeWidth: 2 } }}
-                animate={{ duration: 500 }}
-              />
-            </VictoryChart>
-          )}
+          <View style={{ height: 180, backgroundColor: '#18181b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a', justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: '#52525b', fontSize: 13 }}>차트 준비 중</Text>
+          </View>
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
             {['1mo', '6mo', '1y'].map(p => (
