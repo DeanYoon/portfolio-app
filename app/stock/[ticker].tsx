@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide-react-native';
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
-// VictoryNative imports removed for v36 compatibility; placeholder chart used
 
 const { width } = Dimensions.get('window');
+
+const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
+const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
 
 interface PriceData {
   price: number;
@@ -32,45 +34,71 @@ export default function StockDetailScreen() {
   const [holdings, setHoldings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState('1mo'); // 1mo, 6mo, 1y
+  const [period, setPeriod] = useState('6mo');
 
-  const fetchStockData = async () => {
+  const fetchStockData = useCallback(async () => {
     if (!ticker) return;
     setLoading(true);
 
     try {
-      // 1. 시세 및 히스토리 가져오기
-      const [quoteRes, historyRes] = await Promise.all([
-        fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } }),
-        fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=${period}`, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-      ]);
+      const isJp = isJapaneseFund(ticker);
 
-      const quoteJson = await quoteRes.json();
-      const historyJson = await historyRes.json();
+      if (isJp) {
+        // 일본 펀드: Supabase japan_funds에서 읽기
+        const { data: fundData } = await supabase
+          .from('japan_funds')
+          .select('*')
+          .eq('fcode', ticker)
+          .single();
 
-      const qResult = quoteJson?.chart?.result?.[0];
-      if (qResult) {
-        const meta = qResult.meta;
-        setPriceData({
-          price: meta.regularMarketPrice || 0,
-          name: meta.longName || meta.shortName || ticker,
-          change_amount: meta.regularMarketChange || 0,
-          change_percent: meta.regularMarketChangePercent || 0,
-          currency: meta.currency || 'USD',
-          last_updated: new Date(meta.regularMarketTime * 1000).toISOString(),
-        });
+        if (fundData?.price_data) {
+          const pd = fundData.price_data;
+          setPriceData({
+            price: pd.price,
+            name: pd.name || ticker,
+            change_amount: pd.change_amount || 0,
+            change_percent: pd.change_percent || 0,
+            currency: 'JPY',
+            last_updated: pd.last_updated || new Date().toISOString(),
+          });
+        }
+        setHistory([]);
+      } else {
+        // US/KR: yahoo-finance-api 경유
+        const [quoteRes, historyRes] = await Promise.all([
+          fetch(`${VERCEL_API}/quote?symbols=${ticker}`),
+          fetch(`${VERCEL_API}/history?symbols=${ticker}&period=${period}`),
+        ]);
+
+        const quoteJson = await quoteRes.json();
+        const q = quoteJson?.[ticker];
+        if (q?.price) {
+          setPriceData({
+            price: q.price,
+            name: q.name || q.symbol || ticker,
+            change_amount: q.change || 0,
+            change_percent: q.changePercent || 0,
+            currency: q.currency || 'USD',
+            last_updated: new Date().toISOString(),
+          });
+        }
+
+        const histJson = await historyRes.json();
+        if (histJson?.[ticker]) {
+          const bars = histJson[ticker].prices || histJson[ticker] || [];
+          if (Array.isArray(bars)) {
+            const points = bars
+              .filter((b: any) => b.close != null)
+              .map((b: any) => ({
+                date: b.date,
+                close: b.close,
+              }));
+            setHistory(points);
+          }
+        }
       }
 
-      const hResult = historyJson?.chart?.result?.[0];
-      if (hResult && hResult.timestamp) {
-        const points = hResult.timestamp.map((ts: number, i: number) => ({
-          date: new Date(ts * 1000).toISOString().split('T')[0],
-          close: hResult.indicators.quote[0].close[i] || hResult.indicators.quote[0].open[i]
-        })).filter((p: any) => p.close != null);
-        setHistory(points);
-      }
-
-      // 2. 내 보유 여부 확인
+      // 보유 여부 확인
       const { data: user } = await supabase.auth.getUser();
       if (user?.user) {
         const { data } = await supabase
@@ -85,16 +113,16 @@ export default function StockDetailScreen() {
 
     setLoading(false);
     setRefreshing(false);
-  };
+  }, [ticker, period]);
 
   useEffect(() => {
     fetchStockData();
-  }, [ticker, period]);
+  }, [fetchStockData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStockData();
-  }, [ticker, period]);
+  }, [fetchStockData]);
 
   if (loading && !priceData) {
     return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
@@ -103,7 +131,6 @@ export default function StockDetailScreen() {
   if (!priceData) return null;
 
   const isPositive = priceData.change_percent >= 0;
-  const chartData = history.map(p => ({ x: new Date(p.date), y: p.close }));
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>

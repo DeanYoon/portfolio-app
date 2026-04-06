@@ -74,25 +74,26 @@ export async function GET(request: Request, { id }: { id: string }) {
           }
           fetchedCurrency = 'JPY';
         } else {
-          // US/KR → Yahoo Finance API
-          const start = Math.floor(Date.now() / 1000) - (60 * 60 * 24 * 365 * 2);
-          const end = Math.floor(Date.now() / 1000);
+          // US/KR → yahoo-finance-api 경유
+          const vercelApi = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
           const apiRes = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=5y&events=div`,
-            { headers: { 'User-Agent': 'Mozilla/5.0' } }
+            `${vercelApi}/dividends?symbols=${ticker}&years=5`
           );
           if (apiRes.ok) {
             const json = await apiRes.json();
-            const result = json?.chart?.result?.[0];
-            if (result?.events?.dividends) {
-              const divs = Object.entries(result.events.dividends).map(([ts, div]: [string, any]) => ({
-                date: new Date(parseInt(ts) * 1000).toISOString().split('T')[0],
-                amount: div.amount,
-              }));
-              // 이미 날짜 기준 정렬됨 (과거→최신), 최신순으로 뒤집기
-              divs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            // Response: { "AAPL": { dividends: [{date, amount}, ...], currency: "USD" } }
+            const tData = json?.[ticker];
+            if (tData?.dividends) {
+              const divs = tData.dividends
+                .map((d: any) => ({
+                  date: d.date,
+                  amount: d.amount,
+                }))
+                .filter((d: any) => d.date && d.amount != null);
+              // 최신순 정렬
+              divs.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
               dividends = divs;
-              fetchedCurrency = result.meta?.currency || holding?.currency || 'USD';
+              fetchedCurrency = tData.currency || holding?.currency || 'USD';
             }
           }
         }

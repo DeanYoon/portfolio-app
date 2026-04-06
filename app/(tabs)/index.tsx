@@ -29,7 +29,6 @@ type SortType = 'value' | 'profit' | 'name' | 'rate';
 
 // ─── API Configuration ───
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
-const NIKKEI_API = process.env.EXPO_PUBLIC_NIKKEI_API || 'http://localhost:8000';
 
 // 다키엔 펀드 코드 패턴 (8자리 영문+숫자, 예: 9I312249, 4731925B)
 const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
@@ -73,42 +72,41 @@ const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceDa
     } catch (e) { console.error('Vercel API Error', e); }
   }
 
-  // 3. 일본 펀드 (Nikkei Scraper) - 병렬 개별 요청
-  const jpPromises = jpTickers.map(async (tk) => {
+  // 3. 일본 펀드 (Supabase japan_funds 캐시에서 직접 읽기)
+  if (jpTickers.length > 0) {
     try {
-      const res = await fetch(`${NIKKEI_API}/${tk}`);
-      const json = await res.json();
-      // 가격 문자열 "12,289" -> 숫자 12289 파싱
-      const priceNum = json.price ? parseFloat(json.price.replace(/,/g, '')) : 0;
-      // 변동값 "+94" -> 숫자, 퍼센트 "+0.77%" -> 숫자
-      const changeRaw = json.change || '0';
-      const changeNum = parseFloat(changeRaw.replace(/,/g, ''));
-      const p = json.change_percent || '0%';
-      const pNum = parseFloat(p.replace(/[^0-9.-]/g, ''));
-      
-      map[tk] = {
-        price: priceNum,
-        name: json.title || tk,
-        change_amount: changeNum,
-        change_percent: pNum,
-        last_updated: json.date || new Date().toISOString()
-      };
-    } catch {
-      map[tk] = { price: 0, error: 'Nikkei fetch failed' };
-    }
-  });
-  await Promise.all(jpPromises);
+      const { data } = await supabase
+        .from('japan_funds')
+        .select('fcode, price_data')
+        .in('fcode', jpTickers);
 
-  // 4. 환율/지표 (기존 Yahoo V8 유지)
-  if (currencyTickers.length > 0) {
-    const currRes = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${currencyTickers.join(',')}&interval=1d&range=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const currJson = await currRes.json();
-    if (currJson?.chart?.result) {
-      for (const r of currJson.chart.result) {
-        const m = r.meta;
-        if (m) {
-          map[m.symbol] = { price: m.regularMarketPrice || 0, change_amount: 0, change_percent: 0 };
+      if (data) {
+        for (const fund of data) {
+          const pd = fund.price_data;
+          if (pd) {
+            map[fund.fcode] = {
+              price: pd.price,
+              name: pd.name || fund.fcode,
+              change_amount: pd.change_amount || 0,
+              change_percent: pd.change_percent || 0,
+              last_updated: pd.last_updated || new Date().toISOString()
+            };
+          }
         }
+      }
+    } catch (e) {
+      console.error('JP fund cache read error', e);
+    }
+  }
+
+  // 4. 환율/지표 (CORS 방지: Vercel API 경유)
+  if (currencyTickers.length > 0) {
+    const currRes = await fetch(`${VERCEL_API}/quote?symbols=${currencyTickers.join(',')}`);
+    const currJson = await currRes.json();
+    if (currJson) {
+      for (const [tk, val] of Object.entries(currJson)) {
+        const v = val as any;
+        map[tk] = { price: v.price || 0, change_amount: v.change || 0, change_percent: v.changePercent || 0 };
       }
     }
   }

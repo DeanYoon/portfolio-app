@@ -31,15 +31,18 @@ export async function POST(request: Request) {
       }
     }
 
-    const exchangeTickers = [...new Set([...otherTickers, 'USDKRW=X', 'JPYKRW=X'])];
-    if (exchangeTickers.length > (otherTickers.length > 0 ? 1 : 0)) {
-      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${exchangeTickers.join(',')}`;
+    if (otherTickers.length > 0) {
+      const exchangeTickers = [...new Set([...otherTickers, 'USDKRW=X', 'JPYKRW=X'])];
+      const vercelApi = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
+      const url = `${vercelApi}/quote?symbols=${exchangeTickers.join(',')}`;
       const res = await fetch(url);
       const json = await res.json();
-      const results = json.quoteResponse?.result || [];
-      results.forEach((q: any) => {
-        priceMap[q.symbol] = q.regularMarketPrice;
-      });
+      if (json) {
+        for (const [symbol, data] of Object.entries(json)) {
+          const q = data as any;
+          if (q.price) priceMap[symbol] = q.price;
+        }
+      }
     }
 
     const exchangeRates = {
