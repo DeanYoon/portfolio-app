@@ -27,25 +27,103 @@ interface PriceData {
 
 type SortType = 'value' | 'profit' | 'name' | 'rate';
 
-// ─── Yahoo Finance ───
-const fetchYahooPrices = async (tickers: string[]): Promise<Record<string, PriceData>> => {
+// ─── API Configuration ───
+const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
+const NIKKEI_API = process.env.EXPO_PUBLIC_NIKKEI_API || 'http://localhost:8000';
+
+// 다키엔 펀드 코드 패턴 (8자리 영문+숫자, 예: 9I312249, 4731925B)
+const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
+
+// ─── Data Fetching ───
+const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceData>> => {
   const map: Record<string, PriceData> = {};
-  const promises = tickers.map(async (tk) => {
-    try {
-      if (tk.startsWith('CASH_')) {
-        const cur = tk.split('_')[1];
-        return [tk, { price: cur === 'KRW' ? 1 : 0, change_amount: 0, change_percent: 0 }] as [string, PriceData];
-      }
-      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tk}?interval=1d&range=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const json = await res.json();
-      const m = json?.chart?.result?.[0]?.meta;
-      return [tk, m ? { price: m.regularMarketPrice || 0, name: m.symbol, change_amount: m.regularMarketChange || 0, change_percent: m.regularMarketChangePercent || 0, last_updated: new Date(m.regularMarketTime * 1000).toISOString() } : { price: 0, error: 'No data' }] as [string, PriceData];
-    } catch { return [tk, { price: 0, error: 'fetch failed' }] as [string, PriceData]; }
+  
+  // 1. CASH 분리
+  const cashTickers: string[] = [];
+  const usTickers: string[] = []; // 미국주식 + VIX + 지표
+  const jpTickers: string[] = []; // 일본 펀드
+  const currencyTickers: string[] = []; // 환율
+
+  tickers.forEach(tk => {
+    if (tk.startsWith('CASH_')) cashTickers.push(tk);
+    else if (isJapaneseFund(tk)) jpTickers.push(tk);
+    else if (tk.endsWith('=X')) currencyTickers.push(tk);
+    else usTickers.push(tk);
   });
-  const results = await Promise.all(promises) as [string, PriceData][];
-  results.forEach(([k, v]) => { map[k] = v; });
+
+  // 2. 미국/VIX (Vercel API) - 한 번에 묶어서 요청
+  if (usTickers.length > 0) {
+    try {
+      const res = await fetch(`${VERCEL_API}/quote?symbols=${usTickers.join(',')}`);
+      const json = await res.json();
+      if (json) {
+        for (const [tk, info] of Object.entries(json)) {
+          const i = info as any;
+          if (i.price) {
+            map[tk] = {
+              price: i.price,
+              name: i.symbol || tk,
+              change_amount: i.change || 0,
+              change_percent: i.changePercent || 0,
+              last_updated: new Date().toISOString()
+            };
+          }
+        }
+      }
+    } catch (e) { console.error('Vercel API Error', e); }
+  }
+
+  // 3. 일본 펀드 (Nikkei Scraper) - 병렬 개별 요청
+  const jpPromises = jpTickers.map(async (tk) => {
+    try {
+      const res = await fetch(`${NIKKEI_API}/${tk}`);
+      const json = await res.json();
+      // 가격 문자열 "12,289" -> 숫자 12289 파싱
+      const priceNum = json.price ? parseFloat(json.price.replace(/,/g, '')) : 0;
+      // 변동값 "+94" -> 숫자, 퍼센트 "+0.77%" -> 숫자
+      const changeRaw = json.change || '0';
+      const changeNum = parseFloat(changeRaw.replace(/,/g, ''));
+      const p = json.change_percent || '0%';
+      const pNum = parseFloat(p.replace(/[^0-9.-]/g, ''));
+      
+      map[tk] = {
+        price: priceNum,
+        name: json.title || tk,
+        change_amount: changeNum,
+        change_percent: pNum,
+        last_updated: json.date || new Date().toISOString()
+      };
+    } catch {
+      map[tk] = { price: 0, error: 'Nikkei fetch failed' };
+    }
+  });
+  await Promise.all(jpPromises);
+
+  // 4. 환율/지표 (기존 Yahoo V8 유지)
+  if (currencyTickers.length > 0) {
+    const currRes = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${currencyTickers.join(',')}&interval=1d&range=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const currJson = await currRes.json();
+    if (currJson?.chart?.result) {
+      for (const r of currJson.chart.result) {
+        const m = r.meta;
+        if (m) {
+          map[m.symbol] = { price: m.regularMarketPrice || 0, change_amount: 0, change_percent: 0 };
+        }
+      }
+    }
+  }
+
+  // 5. CASH 처리
+  cashTickers.forEach(tk => {
+    const cur = tk.split('_')[1];
+    map[tk] = { price: cur === 'KRW' ? 1 : 0, change_amount: 0, change_percent: 0 };
+  });
+
   return map;
 };
+
+// 기존 호환성 alias
+const fetchYahooPrices = fetchPricesNew;
 
 // ─── Main Component ───
 export default function DashboardScreen() {

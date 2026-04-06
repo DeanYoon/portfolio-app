@@ -57,45 +57,19 @@ export async function GET(request: Request, { id }: { id: string }) {
 
       try {
         if (isJpFund) {
-          // 일본 펀드 → Yahoo Japan scrape
-          const divRes = await fetch(`https://finance.yahoo.co.jp/quote/${rawTicker}/dividendinfo`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-          });
-          if (!divRes.ok) throw new Error(`HTTP ${divRes.status}`);
-          const html = await divRes.text();
-          
-          // PRELOADED_STATE 파싱
-          const stateMatch = html.match(/window\.__PRELOADED_STATE__\s*=\s*(.*?});/);
-          if (stateMatch) {
-            try {
-              const state = JSON.parse(stateMatch[1]);
-              const histories = state?.mainFundDividendInfo?.histories;
-              if (histories && histories.length > 0) {
-                dividends = histories.map((h: any) => {
-                  const dateStr = h.date.replace(/年/g, '-').replace(/月/g, '-').replace(/日/g, '');
-                  const d = new Date(dateStr);
-                  return {
-                    date: !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : dateStr,
-                    amount: parseFloat(h.price),
-                  };
-                });
-              }
-            } catch {}
-          }
-          // HTML 테이블 폴백
-          if (dividends.length === 0) {
-            const rows = html.split('<tr');
-            for (const row of rows) {
-              const dateMatch = row.match(/class="date[^>]*>([^<]+)</);
-              const priceMatch = row.match(/class="number[^>]*>([\d,.]+)</);
-              if (dateMatch && priceMatch) {
-                const ds = dateMatch[1].trim().replace(/年/g, '-').replace(/月/g, '-').replace(/日/g, '');
-                const d = new Date(ds);
-                const amt = parseFloat(priceMatch[1].replace(/,/g, ''));
-                if (!isNaN(d.getTime()) && !isNaN(amt)) {
-                  dividends.push({ date: d.toISOString().split('T')[0], amount: amt });
-                }
-              }
+          // 일본 펀드 → Supabase japan_funds 캐시에서 읽기
+          if (supabaseAdmin) {
+            const { data } = await supabaseAdmin
+              .from('japan_funds')
+              .select('*')
+              .eq('fcode', rawTicker)
+              .single();
+
+            if (data?.dividend_data && Array.isArray(data.dividend_data)) {
+              dividends = data.dividend_data.map((d: any) => ({
+                date: d.date,
+                amount: d.amount,
+              }));
             }
           }
           fetchedCurrency = 'JPY';
