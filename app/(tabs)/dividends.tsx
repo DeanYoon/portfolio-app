@@ -107,7 +107,7 @@ export default function DividendsScreen() {
           if (fund?.dividend_data && Array.isArray(fund.dividend_data) && fund.dividend_data.length > 0) {
             dividends = fund.dividend_data
               .map((d: any) => ({ date: d.date, amount: d.amount }))
-              .filter((d: any) => d.date && d.amount != null);
+              .filter((d: any) => d.date && d.amount != null && d.amount > 0);
           }
           fetchedCurrency = 'JPY';
         } else {
@@ -125,7 +125,7 @@ export default function DividendsScreen() {
               if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
                 dividends = tData.dividends
                   .map((d: any) => ({ date: d.date, amount: d.amount }))
-                  .filter((d: any) => d.date && d.amount != null)
+                  .filter((d: any) => d.date && d.amount != null && d.amount > 0)
                   .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 fetchedCurrency = tData.currency || holding?.currency || 'USD';
               }
