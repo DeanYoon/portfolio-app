@@ -95,7 +95,7 @@ function AllocationPie({ data, total }: { data: { name: string; fullName?: strin
               <Text style={{ fontSize: 9, fontWeight: 700, color: '#52525b' }}>₩{Math.round(item.value).toLocaleString()}</Text>
             </View>
           </View>
-        )}
+        ))}
       </View>
     </View>
   );
