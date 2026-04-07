@@ -332,10 +332,10 @@ export default function TrendsScreen() {
     return [Math.max(0, min - padding), max + padding];
   }, [chartData]);
 
-  const latest = allHistory[allHistory.length - 1]?.total_value_krw || 0;
-  const first = allHistory[0]?.total_value_krw || 0;
-  const totalChange = latest - first;
-  const changeRate = first > 0 ? (totalChange / first) * 100 : 0;
+  const displayedFirst = displayedSnapshots[0]?.total_value_krw || 0;
+  const displayedLast = displayedSnapshots[displayedSnapshots.length - 1]?.total_value_krw || 0;
+  const periodChange = displayedLast - displayedFirst;
+  const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
 
   // ─── 분석 데이터 렌더링 ───
   const analysis = useMemo((): AnalysisData | null => {
@@ -386,10 +386,10 @@ export default function TrendsScreen() {
         </View>
 
         <View style={{ marginBottom: 20 }}>
-          <Text style={{ fontSize: 32, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>{formatCurrency(latest)}</Text>
+          <Text style={{ fontSize: 32, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>{formatCurrency(displayedLast)}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-             <Text style={{ fontSize: 14, fontWeight: '800', color: totalChange >= 0 ? '#ef4444' : '#3b82f6' }}>{totalChange >= 0 ? '+' : ''}{formatCurrency(totalChange)} ({formatRate(changeRate)})</Text>
-             <Text style={{ fontSize: 11, color: '#52525b' }}>전체 기간</Text>
+             <Text style={{ fontSize: 14, fontWeight: '800', color: periodChange >= 0 ? '#ef4444' : '#3b82f6' }}>{periodChange >= 0 ? '+' : ''}{formatCurrency(periodChange)} ({formatRate(periodRate)})</Text>
+             <Text style={{ fontSize: 11, color: '#52525b' }}>{period === 'ALL' ? '전체 기간' : period}</Text>
           </View>
         </View>
 
