@@ -7,7 +7,7 @@ import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
-import { PieChart, Pie, Cell, Sector } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const { width } = Dimensions.get('window');
 const CHART_H = 200;
@@ -16,101 +16,120 @@ const PAD_RIGHT = 12;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 28;
 
-/* ---------- Allocation Pie Chart (recharts) ---------- */
-const PIE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#a855f7', '#6366f1', '#84cc16'];
+/* ---------- Allocation Pie Chart — mirror of my-portfolio-dashboard trend-charts.tsx ---------- */
+const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-function AllocationPie({ data, total }: { data: { name: string; ticker: string; value: number; percentage: string }[]; total: number }) {
-  const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
-
-  const pieData = useMemo(() =>
-    data.map((d, i) => ({ ...d, fill: PIE_COLORS[i % PIE_COLORS.length] })),
-    [data]
-  );
-
-  const activeShape = ({
-    cx, cy, midAngle, innerRadius, outerRadius, startAngle, endAngle,
-    fill, payload, percent, value,
-  }: any) => {
-    const RADIAN = Math.PI / 180;
-    const sin = Math.sin(-RADIAN * midAngle);
-    const cos = Math.cos(-RADIAN * midAngle);
-    const sx = cx + (outerRadius + 10) * cos;
-    const sy = cy + (outerRadius + 10) * sin;
-    const mx = cx + (outerRadius + 30) * cos;
-    const my = cy + (outerRadius + 30) * sin;
-    const ex = mx + (cos >= 0 ? 1 : -1) * 22;
-    const ey = my;
-    const textAnchor = cos >= 0 ? 'start' : 'end';
-    const displayVal = value >= 1e8 ? `${(value / 1e8).toFixed(2)}억` : value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e4 ? `${Math.round(value / 1e4).toLocaleString()}만` : Math.round(value).toLocaleString();
-
+// CustomPieTooltip — same pattern as my-portfolio-dashboard (L58-75)
+const CustomPieTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const d = payload[0].payload;
     return (
-      <g>
-        <text x={cx} y={cy - 10} dy={8} textAnchor="middle" fill={fill} fontSize={13} fontWeight="800">
-          {payload.name}
-        </text>
-        <Sector
-          cx={cx} cy={cy}
-          innerRadius={innerRadius} outerRadius={outerRadius}
-          startAngle={startAngle} endAngle={endAngle}
-          fill={fill}
-        />
-        <Sector
-          cx={cx} cy={cy}
-          startAngle={startAngle} endAngle={endAngle}
-          innerRadius={outerRadius + 6} outerRadius={outerRadius + 10}
-          fill={fill}
-        />
-        <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" />
-        <circle cx={ex} cy={ey} r={2} fill={fill} stroke="none" />
-        <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey} textAnchor={textAnchor} fill="#f4f4f5" fontSize={12} fontWeight="700">₩{displayVal}</text>
-        <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey} dy={18} textAnchor={textAnchor} fill="#a1a1aa" fontSize={11}>
-          ({((percent ?? 0) * 100).toFixed(1)}%)
-        </text>
-      </g>
+      <div style={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 12, padding: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', maxWidth: 280 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, backgroundColor: payload[0].color }} />
+          <span style={{ color: '#f4f4f5', fontSize: 12, fontWeight: 800, wordBreak: 'break-all' }}>{d.fullName}</span>
+        </div>
+        <div style={{ paddingLeft: 18 }}>
+          <div style={{ color: '#f4f4f5', fontSize: 14, fontWeight: 900, whiteSpace: 'nowrap' }}>
+            ₩{Math.round(d.value).toLocaleString()}
+          </div>
+          <div style={{ color: '#a1a1aa', fontSize: 10, fontWeight: 800 }}>
+            비중: {d.percentage}%
+          </div>
+        </div>
+      </div>
     );
-  };
+  }
+  return null;
+};
+
+function AllocationPie({ data, total }: { data: { name: string; fullName?: string; ticker: string; value: number; percentage: string; changeAmount?: number; changePercent?: number }[]; total: number }) {
+  const [viewMode, setViewMode] = useState<'total' | 'day'>('total');
 
   return (
     <View style={{ alignItems: 'center' }}>
-      {/* Center info */}
-      {activeIndex === undefined && (
-        <View style={{ position: 'absolute', top: '35%', left: 0, right: 0, alignItems: 'center', zIndex: 10, pointerEvents: 'none' }}>
-          <Text style={{ fontSize: 11, color: '#52525b', fontWeight: '600' }}>TOTAL</Text>
-          {(() => {
-            const dv = total >= 1e8 ? `${(total / 1e8).toFixed(2)}억` : total >= 1e6 ? `${(total / 1e6).toFixed(1)}M` : total >= 1e4 ? `${Math.round(total / 1e4).toLocaleString()}만` : total.toLocaleString();
-            return <Text style={{ fontSize: 14, color: '#f4f4f5', fontWeight: '900' }}>{dv}</Text>;
-          })()}
+      {/* Allocation header */}
+      <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 }}>
+        <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5', letterSpacing: 2, textTransform: 'uppercase' }}>Allocation</Text>
+        <View style={{ flexDirection: 'row', backgroundColor: '#09090b', padding: 3, borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+          <TouchableOpacity onPress={() => setViewMode('total')} style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, backgroundColor: viewMode === 'total' ? '#e4e4e7' : 'transparent' }}>
+            <Text style={{ fontSize: 9, fontWeight: '900', letterSpacing: 1, color: viewMode === 'total' ? '#09090b' : '#52525b' }}>TOTAL</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setViewMode('day')} style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, backgroundColor: viewMode === 'day' ? '#e4e4e7' : 'transparent' }}>
+            <Text style={{ fontSize: 9, fontWeight: '900', letterSpacing: 1, color: viewMode === 'day' ? '#09090b' : '#52525b' }}>DAY</Text>
+          </TouchableOpacity>
         </View>
-      )}
-      <PieChart
-        width={220} height={220}
-        style={{ maxWidth: '100%', aspectRatio: 1 }}
-        onMouseEnter={(_, index) => setActiveIndex(index)}
-        onMouseLeave={() => setActiveIndex(undefined)}
-        onClick={(_, index) => setActiveIndex(activeIndex === index ? undefined : index)}
-      >
-        <Pie
-          activeIndex={activeIndex}
-          activeShape={activeShape}
-          data={pieData}
-          cx="50%" cy="50%"
-          innerRadius="60%" outerRadius="80%"
-          dataKey="value"
-          strokeWidth={1} stroke="#09090b"
-        >
-          {pieData.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={entry.fill} />
-          ))}
-        </Pie>
-      </PieChart>
-      {/* Legend */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 4, marginTop: 8, maxWidth: 320 }}>
-        {data.map((d, i) => (
-          <View key={d.ticker} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: PIE_COLORS[i % PIE_COLORS.length], opacity: activeIndex !== undefined && activeIndex !== i ? 0.3 : 1 }} />
-            <Text style={{ fontSize: 9, color: '#a1a1aa', fontWeight: '600' }}>{d.name} {d.percentage}%</Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', width: '100%', alignItems: 'flex-start' }}>
+        {/* Pie Chart with center overlay */}
+        <View style={{ width: '50%', height: 350, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+          {/* Center total overlay — pointerEvents: none so it doesn't block chart interactions */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none', zIndex: 10 }}>
+            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 2, textTransform: 'uppercase' }}>Total Value</Text>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5' }}>₩{Math.round(total).toLocaleString()}</Text>
           </View>
-        ))}
+
+          {data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data}
+                  cx="50%" cy="50%"
+                  innerRadius={85} outerRadius={115}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {data.map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ outline: 'none', opacity: 0.8 }} />
+                  ))}
+                </Pie>
+                <Tooltip wrapperStyle={{ zIndex: 100, outline: 'none' }} content={<CustomPieTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <Text style={{ fontSize: 13, color: '#52525b', fontWeight: 800 }}>표시할 데이터가 없습니다.</Text>
+          )}
+        </View>
+
+        {/* Allocation List — mirror of my-portfolio-dashboard L756-786 */}
+        <View style={{ width: '50%', maxHeight: 350, overflow: 'hidden' }}>
+          {data.map((item: any, index: number) => {
+            const changePct = item.changePercent ?? 0;
+            const changeAmt = item.changeAmount ?? 0;
+            return (
+              <View key={item.ticker} style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(63,63,70,0.3)' }}>
+                {/* Left: color dot + name/ticker */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} />
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: 800, color: '#e4e4e7', color: '#d4d4d8' }} numberOfLines={1}>{item.fullName || item.name}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: 900, color: '#52525b', letterSpacing: 1, textTransform: 'uppercase' }}>{item.ticker}</Text>
+                  </View>
+                </View>
+
+                {/* Right: viewMode-based data */}
+                <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+                  {viewMode === 'total' ? (
+                    <>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: '#f4f4f5' }}>{item.percentage}%</Text>
+                      <Text style={{ fontSize: 9, fontWeight: 700, color: '#52525b' }}>₩{Math.round(item.value).toLocaleString()}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: changePct > 0 ? '#f87171' : (changePct < 0 ? '#60a5fa' : '#52525b') }}>
+                        {changePct > 0 ? '+' : ''}{changePct.toFixed(2)}%
+                      </Text>
+                      <Text style={{ fontSize: 9, fontWeight: 700, color: changePct > 0 ? 'rgba(248,113,113,0.8)' : (changePct < 0 ? 'rgba(96,165,250,0.8)' : '#52525b') }}>
+                        {changePct > 0 ? '+' : ''}₩{Math.round(changeAmt).toLocaleString()}
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -475,8 +494,17 @@ export default function TrendsScreen() {
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
       const effectiveRate = isCash ? 1 : rate;
       const valueKRW = qty * currentPrice * effectiveRate;
+      const changeAmountLocal = isCash ? 0 : (priceInfo?.change_amount || 0) * qty;
+      const changePercent = isCash ? 0 : (priceInfo?.change_percent || 0);
       total += valueKRW;
-      return { name: h.name || h.ticker, ticker: h.ticker, value: Math.round(valueKRW) };
+      return {
+        name: h.name || h.ticker,
+        fullName: priceInfo?.name || h.name || h.ticker,
+        ticker: h.ticker,
+        value: Math.round(valueKRW),
+        changeAmount: Math.round(changeAmountLocal * effectiveRate),
+        changePercent,
+      };
     }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
     
     setAllocationTotal(Math.round(total));
