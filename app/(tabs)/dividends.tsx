@@ -143,7 +143,41 @@ export default function DividendsScreen() {
       }
       setStockPrices(priceMap);
 
-      // 4. 종목별 배당 데이터 수집 (병렬)
+      // Fetch dividends for ALL tickers in ONE bulk API call
+      // Step 1: Build API ticker map (same mapping logic as price fetching)
+      const dividendApiTickers: Record<string, string> = {};  // rawTicker → apiTicker
+      const dividendApiTickerList: string[] = [];
+      
+      const apiTickerSetForDiv = new Set<string>();
+      for (const rawTicker of rawTickers) {
+        const h = holdings.find((hh: any) => hh.ticker === rawTicker);
+        const isJpFund = h?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
+        if (isJpFund) continue; // JP 펀드는 Supabase 캐시에서 처리
+        
+        let apiTicker = rawTicker;
+        if (/^[0-9]{6}$/.test(apiTicker)) apiTicker = `${apiTicker}.KS`;
+        else if (/^[0-9]{4}$/.test(apiTicker)) apiTicker = `${apiTicker}.T`;
+        
+        dividendApiTickers[rawTicker] = apiTicker;
+        dividendApiTickerList.push(apiTicker);
+        apiTickerSetForDiv.add(apiTicker);
+      }
+      
+      // Step 2: ONE bulk call
+      let bulkDivData: Record<string, any[]> = {};
+      if (dividendApiTickerList.length > 0) {
+        try {
+          const divUrl = `${VERCEL_API}/dividends?symbols=${[...apiTickerSetForDiv].join(',')}&years=2`;
+          const divRes = await fetch(divUrl);
+          if (divRes.ok) {
+            bulkDivData = await divRes.json();
+          }
+        } catch (e) {
+          console.error('Bulk dividend fetch error:', e);
+        }
+      }
+      
+      // Step 3: Process each ticker from bulk response
       const dividendPromises = rawTickers.map(async (rawTicker: string) => {
         const holding = holdings.find((h: any) => h.ticker === rawTicker);
         const isJpFund = holding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
@@ -154,6 +188,7 @@ export default function DividendsScreen() {
         let fetchedCurrency = holding?.currency || 'USD';
 
         if (isJpFund) {
+          // JP 펀드는 Supabase 캐시에서
           const fund = jpFundData.find((f: any) => f.fcode === rawTicker);
           if (fund?.dividend_data && Array.isArray(fund.dividend_data) && fund.dividend_data.length > 0) {
             dividends = fund.dividend_data
@@ -162,30 +197,21 @@ export default function DividendsScreen() {
           }
           fetchedCurrency = 'JPY';
         } else {
-          let ticker = rawTicker;
-          if (/^[0-9]{6}$/.test(ticker)) ticker = `${ticker}.KS`;
-          if (/^[0-9]{4}$/.test(ticker)) ticker = `${ticker}.T`;
-
-          try {
-            const apiRes = await fetch(`${VERCEL_API}/dividends?symbols=${ticker}&years=2`);
-            if (apiRes.ok) {
-              const j = await apiRes.json();
-              const tData = j?.[ticker];
-              if (Array.isArray(tData) && tData.length > 0) {
-                dividends = tData
-                  .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
-                  .filter((d: any) => d.date && d.amount != null && d.amount > 0)
-                  .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-              } else if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
-                dividends = tData.dividends
-                  .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
-                  .filter((d: any) => d.date && d.amount != null && d.amount > 0)
-                  .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                if (tData.currency) fetchedCurrency = tData.currency;
-              }
-            }
-          } catch (e: any) {
-            console.error(`Dividend fetch error ${ticker}:`, e.message);
+          // Bulk response에서 해당 ticker 데이터 추출
+          const apiTicker = dividendApiTickers[rawTicker];
+          const tData = apiTicker ? bulkDivData[apiTicker] : null;
+          
+          if (Array.isArray(tData) && tData.length > 0) {
+            dividends = tData
+              .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
+              .filter((d: any) => d.date && d.amount != null && d.amount > 0)
+              .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          } else if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
+            dividends = tData.dividends
+              .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
+              .filter((d: any) => d.date && d.amount != null && d.amount > 0)
+              .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            if (tData.currency) fetchedCurrency = tData.currency;
           }
         }
 
