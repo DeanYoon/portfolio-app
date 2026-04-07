@@ -1,5 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-
 export const runtime = 'edge';
 
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
@@ -7,8 +5,6 @@ const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-a
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const ticker = url.searchParams.get('ticker');
-  const start = url.searchParams.get('period1');
-  const end = url.searchParams.get('period2');
 
   if (!ticker) {
     return Response.json({ error: 'Missing ticker parameter' }, { status: 400 });

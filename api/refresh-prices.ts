@@ -19,10 +19,11 @@ export default async function handler(request: Request) {
 
   let tickers: string[] = [];
   try {
-    tickers = (await request.json()).tickers || [];
+    const body = await request.json();
+    tickers = body.tickers || [];
   } catch { /* empty body */ }
 
-  // 일본 펀드 캐시 미리 가져오기
+  // 일본 펀드 캐시
   let jpFunds: any[] = [];
   if (supabaseAdmin) {
     try {
