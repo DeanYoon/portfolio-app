@@ -120,14 +120,19 @@ export default function DividendsScreen() {
             const apiRes = await fetch(`${VERCEL_API}/dividends?symbols=${ticker}&years=5`);
             if (apiRes.ok) {
               const j = await apiRes.json();
-              // Response: { "AAPL": { dividends: [...], currency: "USD" }, "005930.KS": { ... } }
+              // Response format varies: { "QQQ": [{date, amount}, ...] } OR { "AAPL": { dividends: [...], currency: "USD" } }
               const tData = j?.[ticker];
-              if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
+              if (Array.isArray(tData) && tData.length > 0) {
+                dividends = tData
+                  .map((d: any) => ({ date: d.date, amount: d.amount }))
+                  .filter((d: any) => d.date && d.amount != null && d.amount > 0)
+                  .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+              } else if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
                 dividends = tData.dividends
                   .map((d: any) => ({ date: d.date, amount: d.amount }))
                   .filter((d: any) => d.date && d.amount != null && d.amount > 0)
                   .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                fetchedCurrency = tData.currency || holding?.currency || 'USD';
+                if (tData.currency) fetchedCurrency = tData.currency;
               }
             }
           } catch (e: any) {
