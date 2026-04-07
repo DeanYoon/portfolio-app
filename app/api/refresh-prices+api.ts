@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     // 일본 펀드 필터링
     const isJpFund = (t: string) => /^[0-9A-Z]{8}$/.test(t) || t === '9I312249';
     const jpTickers = tickers.filter(isJpFund);
-    const otherTickers = tickers.filter(t => !isJpFund(t) && !t.startsWith('CASH_'));
+    const otherTickers = tickers.filter((t: string) => !isJpFund(t) && !t.startsWith('CASH_'));
 
     // 일본 펀드는 캐시에서, 나머지는 Yahoo API에서
     const priceMap: Record<string, number> = {};

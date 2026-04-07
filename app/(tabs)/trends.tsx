@@ -5,7 +5,6 @@ import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
-import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 // VictoryNative imports removed for v36 compatibility
 // Placeholder chart used temporarily
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';

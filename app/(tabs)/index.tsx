@@ -189,8 +189,7 @@ export default function DashboardScreen() {
     setLoading(false);
     setDataLoading(false);
     setRefreshing(false);
-}
-
+  }, [session, selectedId]);
   useEffect(() => { if (session) loadDashboard(); }, [session, loadDashboard]);
 
   const onRefresh = useCallback(() => { setRefreshing(true); loadDashboard(); }, [loadDashboard]);
