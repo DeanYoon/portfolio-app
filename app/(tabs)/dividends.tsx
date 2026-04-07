@@ -113,17 +113,28 @@ export default function DividendsScreen() {
 
       const priceMap: Record<string, number> = {};
       try {
-        const res = await fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`);
+        const url = `${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`;
+        console.log('[dividends] Price URL:', url);
+        const res = await fetch(url);
+        console.log('[dividends] Price Status:', res.status, res.statusText);
         if (res.ok) {
-          const apiRes = await res.json();
-          for (const [rawTicker, apiTicker] of Object.entries(rawToApi)) {
-            const v = apiRes?.[apiTicker];
-            if (v?.price) priceMap[rawTicker] = v.price;
+          const text = await res.text();
+          console.log('[dividends] Response (first 300):', text.substring(0, 300));
+          let apiRes: any;
+          try { apiRes = JSON.parse(text); } catch {
+            console.error('[dividends] JSON parse failed. Response:', text.substring(0, 200));
           }
-          setExchangeRates({
-            usdkrw: apiRes['USDKRW=X']?.price || 1400,
-            jpykrw: apiRes['JPYKRW=X']?.price || 9.5,
-          });
+          if (apiRes) {
+            for (const [rawTicker, apiTicker] of Object.entries(rawToApi)) {
+              const v = apiRes?.[apiTicker];
+              console.log('[dividends] Price', apiTicker, '→', v?.price, 'mapped to', rawTicker);
+              if (v?.price) priceMap[rawTicker] = v.price;
+            }
+            setExchangeRates({
+              usdkrw: apiRes['USDKRW=X']?.price || 1400,
+              jpykrw: apiRes['JPYKRW=X']?.price || 9.5,
+            });
+          }
         }
       } catch (e) { console.error('Price fetch error:', e); }
 

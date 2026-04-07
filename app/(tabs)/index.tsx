@@ -53,9 +53,18 @@ const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceDa
 
   // 2. 미국/VIX (Vercel API) - 한 번에 묶어서 요청
   if (usTickers.length > 0) {
+    const url = `${VERCEL_API}/quote?symbols=${usTickers.join(',')}`;
+    console.log('[fetchPrices] US tickers:', usTickers);
+    console.log('[fetchPrices] URL:', url);
     try {
-      const res = await fetch(`${VERCEL_API}/quote?symbols=${usTickers.join(',')}`);
-      const json = await res.json();
+      const res = await fetch(url);
+      console.log('[fetchPrices] Status:', res.status, res.statusText);
+      const text = await res.text();
+      console.log('[fetchPrices] Response (first 500):', text.substring(0, 500));
+      let json: any;
+      try { json = JSON.parse(text); } catch {
+        console.error('[fetchPrices] JSON parse failed. Response:', text.substring(0, 200));
+      }
       if (json) {
         for (const [tk, info] of Object.entries(json)) {
           const i = info as any;
@@ -67,10 +76,12 @@ const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceDa
               change_percent: i.changePercent || 0,
               last_updated: new Date().toISOString()
             };
+          } else {
+            console.warn('[fetchPrices] No price for', tk, JSON.stringify(info));
           }
         }
       }
-    } catch (e) { console.error('Vercel API Error', e); }
+    } catch (e: any) { console.error('[fetchPrices] Error:', e.message || e); }
   }
 
   // 3. 일본 펀드 (Supabase japan_funds 캐시에서 직접 읽기)
