@@ -143,45 +143,7 @@ export default function DividendsScreen() {
       }
       setStockPrices(priceMap);
 
-      // 4. 과거 주가 로드 (트렌드 예측용) — yahoo-finance-api 경유
-      // Response: { "AAPL": { "2025-04-07": {open, high, low, close, ...}, ... } }
-      const histPromises = rawTickers.map(async (ticker) => {
-        try {
-          const histRes = await fetch(`${VERCEL_API}/history?symbols=${ticker}&period=1y`);
-          if (histRes.ok) {
-            const j = await histRes.json();
-            const tData = j?.[ticker];
-            if (tData && typeof tData === 'object' && !Array.isArray(tData)) {
-              // date-keyed object → dividendDatePrices
-              const priceMap2: Record<string, number> = {};
-              const cy = new Date().getFullYear();
-              const lm = new Date().getMonth();
-              for (const [dateStr, bar] of Object.entries(tData)) {
-                const b = bar as any;
-                if (b.close != null) priceMap2[dateStr] = b.close;
-              }
-              // last year same month price
-              const lyDate = `${cy - 1}-${String(lm + 1).padStart(2, '0')}`;
-              let lastYearPrice: number | null = null;
-              for (const [d, p] of Object.entries(priceMap2)) {
-                if (d.startsWith(lyDate)) { lastYearPrice = p; break; }
-              }
-              return { ticker, data: { dividendDatePrices: priceMap2, lastYearSameMonthPrice: lastYearPrice } };
-            }
-          }
-        } catch {}
-        return { ticker, data: null };
-      });
-      const histResults = await Promise.all(histPromises);
-      const histMap: Record<string, any> = {};
-      for (const r of histResults) {
-        if (r.data) {
-          histMap[r.ticker] = r.data;
-        }
-      }
-      setHistoricalPrices(histMap);
-
-      // 5. 종목별 배당 데이터 수집 (병렬)
+      // 4. 종목별 배당 데이터 수집 (병렬)
       const dividendPromises = rawTickers.map(async (rawTicker: string) => {
         const holding = holdings.find((h: any) => h.ticker === rawTicker);
         const isJpFund = holding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
@@ -195,7 +157,7 @@ export default function DividendsScreen() {
           const fund = jpFundData.find((f: any) => f.fcode === rawTicker);
           if (fund?.dividend_data && Array.isArray(fund.dividend_data) && fund.dividend_data.length > 0) {
             dividends = fund.dividend_data
-              .map((d: any) => ({ date: d.date, amount: d.amount }))
+              .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
               .filter((d: any) => d.date && d.amount != null && d.amount > 0);
           }
           fetchedCurrency = 'JPY';
@@ -211,12 +173,12 @@ export default function DividendsScreen() {
               const tData = j?.[ticker];
               if (Array.isArray(tData) && tData.length > 0) {
                 dividends = tData
-                  .map((d: any) => ({ date: d.date, amount: d.amount }))
+                  .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
                   .filter((d: any) => d.date && d.amount != null && d.amount > 0)
                   .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
               } else if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
                 dividends = tData.dividends
-                  .map((d: any) => ({ date: d.date, amount: d.amount }))
+                  .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
                   .filter((d: any) => d.date && d.amount != null && d.amount > 0)
                   .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 if (tData.currency) fetchedCurrency = tData.currency;
@@ -236,6 +198,7 @@ export default function DividendsScreen() {
           dividends: dividends.map((d: any) => ({
             date: d.date,
             amount: d.amount,
+            close: d.close ?? 0,
             totalForHolding: d.amount * effectiveQty,
             currency: fetchedCurrency,
           })),
@@ -290,7 +253,7 @@ export default function DividendsScreen() {
         } else {
           // 예측 데이터
           const est = calculateLatestTrendEstimate(
-            sd.dividends as any, historicalPrices,
+            sd.dividends as any, null,
             stockPrices[sd.ticker] || 0, m, cy, sd.ticker,
             isKrwMode, 1
           );
@@ -306,7 +269,7 @@ export default function DividendsScreen() {
         type: past ? 'actual' as const : 'estimate' as const,
       };
     });
-  }, [stockDividends, historicalPrices, stockPrices, isKrwMode, isAfterTax, convKrw]);
+  }, [stockDividends, stockPrices, isKrwMode, isAfterTax, convKrw]);
 
   const totalAnnual = monthlyData.reduce((s, m) => s + m.value, 0);
   const monthVal = selectedMonth !== null ? monthlyData[selectedMonth]?.value ?? 0 : 0;
@@ -319,12 +282,12 @@ export default function DividendsScreen() {
       const tax = getTaxRate(sd.country, isAfterTax);
       const analysis = calculateDividendYield(sd.dividends as any, stockPrices[sd.ticker] || 0, sd.ticker);
       const estimates: TrendEstimate[] = Array.from({ length: 12 }, (_, m) =>
-        calculateLatestTrendEstimate(sd.dividends as any, historicalPrices, stockPrices[sd.ticker] || 0, m, cy, sd.ticker, isKrwMode, 1)
+        calculateLatestTrendEstimate(sd.dividends as any, null, stockPrices[sd.ticker] || 0, m, cy, sd.ticker, isKrwMode, 1)
       );
       const annualKrw = estimates.reduce((s, e) => s + convKrw(e.amount * sd.quantity * tax, sd.currency), 0);
       return { ticker: sd.ticker, name: sd.name, country: sd.country, currency: sd.currency, quantity: sd.quantity, analysis, estimates, tax, annualKrw };
     }).sort((a, b) => b.annualKrw - a.annualKrw);
-  }, [stockDividends, stockPrices, historicalPrices, isKrwMode, isAfterTax, convKrw]);
+  }, [stockDividends, stockPrices, isKrwMode, isAfterTax, convKrw]);
 
   const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
 

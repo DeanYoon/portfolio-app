@@ -1,9 +1,10 @@
-import { format, differenceInMonths, parseISO, isSameMonth } from 'date-fns';
+import { differenceInMonths, parseISO, isSameMonth } from 'date-fns';
 
 export interface StockDividend {
   ticker: string;
   amount: number;
   date: string;
+  close?: number;  // dividend API close price
   currency: string;
 }
 
@@ -102,16 +103,17 @@ export const calculateDividendYield = (
 
 /**
  * 6.6 트렌드 예측 모델
+ * dividends.close → API에 포함된 배당일 종가 (history API 불필요)
  */
 export const calculateLatestTrendEstimate = (
   dividends: StockDividend[],
-  historicalPrices: Record<string, any>,
+  _historicalPrices: null,  // unused — dividends.close 사용
   currentPrice: number,
   targetMonth: number,
   currentYear: number,
   ticker: string,
-  isKrwMode: boolean,
-  exchangeRate: number
+  _isKrwMode: boolean,
+  _exchangeRate: number
 ): TrendEstimate => {
   const targetDate = new Date(currentYear, targetMonth, 15);
   
@@ -127,8 +129,8 @@ export const calculateLatestTrendEstimate = (
       growthRate: 0,
       lastYearAmount: 0,
       lastYearSameMonthDividend: 0,
-      lastYearSameMonthPrice: 0,
-      lastYearSameMonthYield: 0,
+      lastYearSameMonthPrice: actualMatch.close || 0,
+      lastYearSameMonthYield: actualMatch.close ? (actualMatch.amount / actualMatch.close) * 100 : 0,
       calculationMethod: 'actual',
       calculationFormula: '실제 지급 데이터',
       isTrendApplied: false,
@@ -158,22 +160,27 @@ export const calculateLatestTrendEstimate = (
     }
   }
 
-  // 2위: 평균 배당수익률 기반 예측
-  const dividendDatePrices = historicalPrices[ticker]?.dividendDatePrices || {};
-  const relevantDivs = dividends.filter(d => dividendDatePrices[format(parseISO(d.date), 'yyyy-MM-dd')]);
+  // 2위: 평균 배당수익률 기반 예측 (dividends.close 사용)
+  const divsWithClose = dividends.filter(d => d.close != null && d.close > 0);
   
-  if (relevantDivs.length > 0 && currentPrice > 0) {
-    const yields = relevantDivs.map(d => d.amount / dividendDatePrices[format(parseISO(d.date), 'yyyy-MM-dd')]);
+  if (divsWithClose.length > 0 && currentPrice > 0) {
+    const yields = divsWithClose.map(d => d.amount / (d.close as number));
     const avgYield = yields.reduce((a, b) => a + b, 0) / yields.length;
     const predictedAmount = currentPrice * avgYield;
+
+    // 작년 동월 배당 찾기
+    const lastYearDiv = dividends.find(d => {
+      const dDate = parseISO(d.date);
+      return isSameMonth(dDate, new Date(currentYear - 1, targetMonth, 15));
+    });
 
     return {
       amount: predictedAmount,
       growthRate: 0,
-      lastYearAmount: 0,
-      lastYearSameMonthDividend: historicalPrices[ticker]?.lastYearSameMonthPrice || 0,
-      lastYearSameMonthPrice: historicalPrices[ticker]?.lastYearSameMonthPrice || 0,
-      lastYearSameMonthYield: avgYield * 100,
+      lastYearAmount: lastYearDiv?.amount || 0,
+      lastYearSameMonthDividend: lastYearDiv?.amount || 0,
+      lastYearSameMonthPrice: lastYearDiv?.close || 0,
+      lastYearSameMonthYield: lastYearDiv?.close ? (lastYearDiv.amount / lastYearDiv.close) * 100 : 0,
       calculationMethod: 'price_trend',
       calculationFormula: `평균 배당수익률 ${(avgYield * 100).toFixed(2)}% × $${currentPrice.toFixed(2)}`,
       isTrendApplied: true,
@@ -213,8 +220,8 @@ export const calculateLatestTrendEstimate = (
       growthRate: 0,
       lastYearAmount: lastYearMatch.amount,
       lastYearSameMonthDividend: lastYearMatch.amount,
-      lastYearSameMonthPrice: 0,
-      lastYearSameMonthYield: 0,
+      lastYearSameMonthPrice: lastYearMatch.close || 0,
+      lastYearSameMonthYield: lastYearMatch.close ? (lastYearMatch.amount / lastYearMatch.close) * 100 : 0,
       calculationMethod: 'dividend_trend',
       calculationFormula: '작년 동월 배당 데이터 폴백',
       isTrendApplied: false,
