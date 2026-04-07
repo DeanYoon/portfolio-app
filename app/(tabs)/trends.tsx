@@ -571,7 +571,7 @@ export default function TrendsScreen() {
         <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>ALLOCATION</Text>
         {allocationData.length > 0 ? (
           <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 16, marginBottom: 12 }}>
-            <View style={{ height: 400 }}>
+            <View style={{ minHeight: 450 }}>
               <AllocationPie data={allocationData} total={allocationTotal} />
             </View>
           </View>
