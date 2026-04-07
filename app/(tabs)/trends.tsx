@@ -47,7 +47,7 @@ function AllocationPie({ data, total }: { data: { name: string; fullName?: strin
   return (
     <View style={{ alignItems: 'center' }}>
       {/* Pie Chart with center overlay */}
-      <View style={{ width: '100%', height: 300, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+      <View style={{ width: '100%', height: 350, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
         {/* Center total overlay */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none', zIndex: 10 }}>
           <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 2, textTransform: 'uppercase' }}>Total Value</Text>
@@ -570,9 +570,10 @@ export default function TrendsScreen() {
 
         <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>ALLOCATION</Text>
         {allocationData.length > 0 ? (
-          <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 20, alignItems: 'center' }}>
-            <AllocationPie data={allocationData} total={allocationTotal} />
-            <Text style={{ fontSize: 10, color: '#52525b', marginTop: 8 }}>Tap a slice to see detail</Text>
+          <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 16, marginBottom: 12 }}>
+            <View style={{ height: 400 }}>
+              <AllocationPie data={allocationData} total={allocationTotal} />
+            </View>
           </View>
         ) : (
           <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 40, alignItems: 'center', marginBottom: 12 }}>
