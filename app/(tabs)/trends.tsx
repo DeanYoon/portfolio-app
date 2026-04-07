@@ -4,6 +4,8 @@ import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
+import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
+import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 // VictoryNative imports removed for v36 compatibility
 // Placeholder chart used temporarily
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
@@ -33,7 +35,8 @@ export default function TrendsScreen() {
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<'ALL' | string>('ALL');
+  const [selectedPortfolioId, setSelectedPortfolioIdLocal] = useState<'ALL' | string>('ALL');
+  const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<Snapshot[]>([]);
   const [period, setPeriod] = useState<'1M' | '3M' | '1Y' | 'ALL'>('1M');
 
@@ -41,8 +44,17 @@ export default function TrendsScreen() {
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [containerWidth, setContainerWidth] = useState(width - 32);
 
+  // Sync with shared state on mount
+  useEffect(() => {
+    (async () => {
+      const saved = await getSelectedPortfolioId();
+      if (saved) setSelectedPortfolioIdLocal(saved);
+    })();
+  }, []);
+
   const fetchData = useCallback(async () => {
     if (!session) return;
+    setDataLoading(true);
     setLoading(true);
     try {
       const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
@@ -59,6 +71,7 @@ export default function TrendsScreen() {
       console.error('Error fetching trends data:', e);
     }
     setLoading(false);
+    setDataLoading(false);
   }, [session]);
 
   useEffect(() => {
@@ -134,7 +147,7 @@ export default function TrendsScreen() {
     return { type: 'RANGE', start: shortDate(start.snapshot_date), end: shortDate(end.snapshot_date), diff, roi, iStart, iEnd };
   }, [activeIndices, chartData]);
 
-  if (loading) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  if (dataLoading) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
@@ -142,11 +155,11 @@ export default function TrendsScreen() {
         
         <View style={{ marginBottom: 16 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            <TouchableOpacity onPress={() => setSelectedPortfolioId('ALL')} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: selectedPortfolioId === 'ALL' ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: selectedPortfolioId === 'ALL' ? '#22c55e' : '#27272a' }}>
+            <TouchableOpacity onPress={async () => { setSelectedPortfolioIdLocal('ALL'); await setSelectedPortfolioId(null); }} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: selectedPortfolioId === 'ALL' ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: selectedPortfolioId === 'ALL' ? '#22c55e' : '#27272a' }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: selectedPortfolioId === 'ALL' ? '#052e16' : '#71717a' }}>전체 자산</Text>
             </TouchableOpacity>
             {portfolios.map(p => (
-              <TouchableOpacity key={p.id} onPress={() => setSelectedPortfolioId(p.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: selectedPortfolioId === p.id ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: selectedPortfolioId === p.id ? '#22c55e' : '#27272a' }}>
+              <TouchableOpacity key={p.id} onPress={async () => { setSelectedPortfolioIdLocal(p.id); await setSelectedPortfolioId(p.id); }} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: selectedPortfolioId === p.id ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: selectedPortfolioId === p.id ? '#22c55e' : '#27272a' }}>
                 <Text style={{ fontSize: 11, fontWeight: '800', color: selectedPortfolioId === p.id ? '#052e16' : '#71717a' }}>{p.name}</Text>
               </TouchableOpacity>
             ))}

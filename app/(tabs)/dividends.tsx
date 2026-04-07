@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { formatCurrency, getFlag } from '@/src/utils/format';
 import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
 import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
@@ -37,7 +38,8 @@ export default function DividendsScreen() {
   const [isAfterTax, setIsAfterTax] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioItem[]>([]);
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
+  const [selectedPortfolioId, setSelectedPortfolioIdLocal] = useState<string | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
@@ -53,9 +55,23 @@ export default function DividendsScreen() {
     })();
   }, [session]);
 
+  // Sync with shared state on mount
+  useEffect(() => {
+    (async () => {
+      const saved = await getSelectedPortfolioId();
+      if (saved) setSelectedPortfolioIdLocal(saved);
+    })();
+  }, []);
+
+  const setSelectedPortfolioIdShared = async (id: string | null) => {
+    setSelectedPortfolioIdLocal(id);
+    await setSelectedPortfolioId(id);
+  };
+
   // ── Fetch dividends ──
   const fetchDividends = useCallback(async (pid: string) => {
     if (!pid) return;
+    setDataLoading(true);
     setLoading(true);
     setError(null);
     try {
@@ -233,6 +249,7 @@ export default function DividendsScreen() {
       console.error(e);
     } finally {
       setLoading(false);
+      setDataLoading(false);
     }
   }, []);
 
@@ -303,7 +320,7 @@ export default function DividendsScreen() {
 
   const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
 
-  if (loading && !stockDividends.length) {
+  if (dataLoading && !stockDividends.length) {
     return <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /><Text style={{ color: '#71717a', marginTop: 12, fontSize: 13, fontWeight: '700' }}>배당 데이터를 불러오는 중...</Text></View>;
   }
 
@@ -480,7 +497,7 @@ export default function DividendsScreen() {
           <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
             {portfolios.map(p => (
-              <TouchableOpacity key={p.id} onPress={() => { setSelectedPortfolioId(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between' }}>
+              <TouchableOpacity key={p.id} onPress={async () => { await setSelectedPortfolioIdShared(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: p.id === selectedPortfolioId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
                 {p.id === selectedPortfolioId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
               </TouchableOpacity>

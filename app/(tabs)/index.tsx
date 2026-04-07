@@ -6,6 +6,7 @@ import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/hooks/useAuth';
 import { formatCurrency, formatRate, getFlag, getCountry, getCurrency } from '@/src/utils/format';
 import { calculateTax } from '@/src/utils/math';
+import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw,
   LogOut, ChevronDown, ArrowUpRight, ArrowDownRight, 
@@ -129,7 +130,21 @@ export default function DashboardScreen() {
   const { session, loading: authLoading, signOut } = useAuth();
   
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedIdLocal] = useState<string | undefined>();
+  const [dataLoading, setDataLoading] = useState(true);
+
+  // Sync with shared state on mount
+  useEffect(() => {
+    (async () => {
+      const saved = await getSelectedPortfolioId();
+      setSelectedIdLocal(saved || undefined);
+    })();
+  }, []);
+
+  const setSelectedId = async (id: string | undefined) => {
+    setSelectedIdLocal(id);
+    await setSelectedPortfolioId(id || null);
+  };
   const [priceMap, setPriceMap] = useState<Record<string, PriceData>>({});
   const [usdkrw, setUsdKrw] = useState(1400);
   const [jpykrw, setJpyKrw] = useState(9.5);
@@ -143,6 +158,7 @@ export default function DashboardScreen() {
 
   const loadDashboard = useCallback(async () => {
     if (!session) return;
+    setDataLoading(true);
     setLoading(true);
     try {
       const { data: pData, error } = await supabase
@@ -160,8 +176,9 @@ export default function DashboardScreen() {
       setJpyKrw(prices['JPYKRW=X']?.price || 9.5);
     } catch (e) { console.error(e); }
     setLoading(false);
+    setDataLoading(false);
     setRefreshing(false);
-  }, [session, selectedId]);
+}
 
   useEffect(() => { if (session) loadDashboard(); }, [session, loadDashboard]);
 
@@ -260,7 +277,7 @@ export default function DashboardScreen() {
 
   if (authLoading) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
   if (!session) return <Redirect href="/(auth)/login" />;
-  if (loading && portfolios.length === 0) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  if (dataLoading && portfolios.length === 0) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
 
   const { processed, totals, exitSimulation } = processedData;
   const tp = totals.grandProfitKRW >= 0;
