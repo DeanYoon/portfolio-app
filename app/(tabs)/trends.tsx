@@ -44,92 +44,58 @@ const CustomPieTooltip = ({ active, payload }: any) => {
 };
 
 function AllocationPie({ data, total }: { data: { name: string; fullName?: string; ticker: string; value: number; percentage: string; changeAmount?: number; changePercent?: number }[]; total: number }) {
-  const [viewMode, setViewMode] = useState<'total' | 'day'>('total');
-
   return (
     <View style={{ alignItems: 'center' }}>
-      {/* Allocation header */}
-      <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 }}>
-        <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5', letterSpacing: 2, textTransform: 'uppercase' }}>Allocation</Text>
-        <View style={{ flexDirection: 'row', backgroundColor: '#09090b', padding: 3, borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
-          <TouchableOpacity onPress={() => setViewMode('total')} style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, backgroundColor: viewMode === 'total' ? '#e4e4e7' : 'transparent' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', letterSpacing: 1, color: viewMode === 'total' ? '#09090b' : '#52525b' }}>TOTAL</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setViewMode('day')} style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, backgroundColor: viewMode === 'day' ? '#e4e4e7' : 'transparent' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', letterSpacing: 1, color: viewMode === 'day' ? '#09090b' : '#52525b' }}>DAY</Text>
-          </TouchableOpacity>
+      {/* Pie Chart with center overlay */}
+      <View style={{ width: '100%', height: 300, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+        {/* Center total overlay */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none', zIndex: 10 }}>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 2, textTransform: 'uppercase' }}>Total Value</Text>
+          <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5' }}>₩{Math.round(total).toLocaleString()}</Text>
         </View>
+
+        {data.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%" cy="50%"
+                innerRadius={85} outerRadius={115}
+                paddingAngle={5}
+                dataKey="value"
+              >
+                {data.map((entry: any, index: number) => (
+                  <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ outline: 'none', opacity: 0.8 }} />
+                ))}
+              </Pie>
+              <Tooltip wrapperStyle={{ zIndex: 100, outline: 'none' }} content={<CustomPieTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <Text style={{ fontSize: 13, color: '#52525b', fontWeight: 800 }}>표시할 데이터가 없습니다.</Text>
+        )}
       </View>
 
-      <View style={{ flexDirection: 'row', width: '100%', alignItems: 'flex-start' }}>
-        {/* Pie Chart with center overlay */}
-        <View style={{ width: '50%', height: 350, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
-          {/* Center total overlay — pointerEvents: none so it doesn't block chart interactions */}
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none', zIndex: 10 }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 2, textTransform: 'uppercase' }}>Total Value</Text>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5' }}>₩{Math.round(total).toLocaleString()}</Text>
-          </View>
-
-          {data.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data}
-                  cx="50%" cy="50%"
-                  innerRadius={85} outerRadius={115}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {data.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ outline: 'none', opacity: 0.8 }} />
-                  ))}
-                </Pie>
-                <Tooltip wrapperStyle={{ zIndex: 100, outline: 'none' }} content={<CustomPieTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <Text style={{ fontSize: 13, color: '#52525b', fontWeight: 800 }}>표시할 데이터가 없습니다.</Text>
-          )}
-        </View>
-
-        {/* Allocation List — mirror of my-portfolio-dashboard L756-786 */}
-        <View style={{ width: '50%', maxHeight: 350, overflow: 'hidden' }}>
-          {data.map((item: any, index: number) => {
-            const changePct = item.changePercent ?? 0;
-            const changeAmt = item.changeAmount ?? 0;
-            return (
-              <View key={item.ticker} style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(63,63,70,0.3)' }}>
-                {/* Left: color dot + name/ticker */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} />
-                  <View>
-                    <Text style={{ fontSize: 13, fontWeight: 800, color: '#e4e4e7', color: '#d4d4d8' }} numberOfLines={1}>{item.fullName || item.name}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: 900, color: '#52525b', letterSpacing: 1, textTransform: 'uppercase' }}>{item.ticker}</Text>
-                  </View>
-                </View>
-
-                {/* Right: viewMode-based data */}
-                <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-                  {viewMode === 'total' ? (
-                    <>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: '#f4f4f5' }}>{item.percentage}%</Text>
-                      <Text style={{ fontSize: 9, fontWeight: 700, color: '#52525b' }}>₩{Math.round(item.value).toLocaleString()}</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: changePct > 0 ? '#f87171' : (changePct < 0 ? '#60a5fa' : '#52525b') }}>
-                        {changePct > 0 ? '+' : ''}{changePct.toFixed(2)}%
-                      </Text>
-                      <Text style={{ fontSize: 9, fontWeight: 700, color: changePct > 0 ? 'rgba(248,113,113,0.8)' : (changePct < 0 ? 'rgba(96,165,250,0.8)' : '#52525b') }}>
-                        {changePct > 0 ? '+' : ''}₩{Math.round(changeAmt).toLocaleString()}
-                      </Text>
-                    </>
-                  )}
-                </View>
+      {/* Allocation List */}
+      <View style={{ width: '100%', marginTop: 8 }}>
+        {data.map((item: any, index: number) => (
+          <View key={item.ticker} style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(63,63,70,0.3)' }}>
+            {/* Left: color dot + name/ticker */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} />
+              <View>
+                <Text style={{ fontSize: 13, fontWeight: 800, color: '#d4d4d8' }} numberOfLines={1}>{item.fullName || item.name}</Text>
+                <Text style={{ fontSize: 9, fontWeight: 900, color: '#52525b', letterSpacing: 1, textTransform: 'uppercase' }}>{item.ticker}</Text>
               </View>
-            );
-          })}
-        </View>
+            </View>
+
+            {/* Right: % + ₩amount */}
+            <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#f4f4f5' }}>{item.percentage}%</Text>
+              <Text style={{ fontSize: 9, fontWeight: 700, color: '#52525b' }}>₩{Math.round(item.value).toLocaleString()}</Text>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
