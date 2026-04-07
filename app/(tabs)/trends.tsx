@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable } from 'react-native';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,24 +22,54 @@ function MiniChart({
   containerW,
   activeIndices,
   onHit,
-  onChange,
+  onRelease,
 }: {
   data: { x: Date; y: number; datum: Snapshot }[];
   yDomain: [number, number];
   containerW: number;
   activeIndices: number[];
   onHit: (i: number) => void;
-  onChange: (done: boolean) => void;
+  onRelease: () => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const innerW = containerW - PAD_LEFT - PAD_RIGHT;
   const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  const [ys, xs] = [yDomain, [0, innerW]] as [[number, number], [number, number]];
+  const ys: [number, number] = yDomain;
 
   const sx = (i: number) => (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW + PAD_LEFT);
   const sy = (v: number) => {
     if (ys[1] === ys[0]) return PAD_TOP + innerH / 2;
     return PAD_TOP + innerH - ((v - ys[0]) / (ys[1] - ys[0])) * innerH;
   };
+
+  const handlePointer = useCallback((clientX: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const ratio = (x - PAD_LEFT) / innerW;
+    const rawIdx = Math.round(ratio * (data.length - 1));
+    const idx = Math.max(0, Math.min(data.length - 1, rawIdx));
+    if (!Number.isNaN(idx)) onHit(idx);
+  }, [innerW, data.length, onHit]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onPointerMove = (e: PointerEvent) => { handlePointer(e.clientX); };
+    const onPointerUp = () => onRelease();
+    const onClick = (e: MouseEvent) => { handlePointer(e.clientX); };
+
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerUp);
+    el.addEventListener('click', onClick);
+    return () => {
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerUp);
+      el.removeEventListener('click', onClick);
+    };
+  }, [handlePointer, onRelease]);
 
   // Line path
   const lineD = data.length > 1
@@ -55,7 +85,7 @@ function MiniChart({
   const isPositive = data.length > 1 ? data[data.length - 1].y >= data[0].y : true;
   const colorPositive = isPositive ? '#22c55e' : '#3b82f6';
   const gridTicks = 3;
-  const gridLines = [];
+  const gridLines: React.ReactElement[] = [];
   for (let i = 0; i <= gridTicks; i++) {
     const yVal = ys[0] + ((ys[1] - ys[0]) * i) / gridTicks;
     const yPos = sy(yVal);
@@ -70,14 +100,28 @@ function MiniChart({
 
   // X-axis labels — show ~4 labels
   const labelStep = Math.max(1, Math.floor(data.length / 4));
-  const xLabels = data.filter((_, i) => i === 0 || i === data.length - 1 || i % labelStep === 0);
-  const xLabelIndices = new Set(xLabels.map(xl => data.indexOf(xl)));
-
-  // Hit areas
-  const hitW = innerW / (data.length || 1);
+  const xLabelIndices = new Set<number>();
+  data.forEach((_, i) => {
+    if (i === 0 || i === data.length - 1 || i % labelStep === 0) xLabelIndices.add(i);
+  });
 
   return (
-    <View style={{ position: 'relative' }}>
+    <View ref={containerRef} style={{ position: 'relative', cursor: 'crosshair' }}
+      // Native fallback (iOS/Android)
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderMove={(e) => {
+        const locX = (e.nativeEvent as any).locationX;
+        if (typeof locX === 'number') {
+          const ratio = (locX - PAD_LEFT) / innerW;
+          const rawIdx = Math.round(ratio * (data.length - 1));
+          const idx = Math.max(0, Math.min(data.length - 1, rawIdx));
+          if (!Number.isNaN(idx)) onHit(idx);
+        }
+      }}
+      onResponderRelease={() => onRelease()}
+      onResponderTerminate={() => onRelease()}
+    >
       <Svg width={containerW} height={CHART_H}>
         <Defs>
           <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -90,13 +134,11 @@ function MiniChart({
         {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
 
         {/* X labels */}
-        {data.length > 0 && xLabelIndices.size > 0 &&
-          data.filter((d, i) => xLabelIndices.has(i)).map((d, idx) => {
-            const i = data.indexOf(d);
-            const ds = d.datum.snapshot_date.split('T')[0].slice(2);
-            return <SvgText key={`x-${idx}`} x={sx(i)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor="middle">{ds}</SvgText>;
-          })
-        }
+        {data.length > 0 && [...xLabelIndices].map((i) => (
+          <SvgText key={`x-${i}`} x={sx(i)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor="middle">
+            {data[i].datum.snapshot_date.split('T')[0].slice(2)}
+          </SvgText>
+        ))}
 
         {/* Active point circles */}
         {activeIndices.map(idx => {
@@ -104,28 +146,6 @@ function MiniChart({
           return <Circle key={`a-${idx}`} cx={sx(idx)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />;
         })}
       </Svg>
-      {/* Transparent touch overlay */}
-      {data.length > 1 && (
-        <Pressable
-          style={{ position: 'absolute', top: 0, left: 0, width: containerW, height: CHART_H }}
-          onPressIn={() => onChange(false)}
-          onPressOut={() => onChange(true)}
-          onPress={(e) => {
-            const x = e.nativeEvent.locationX;
-            const ratio = (x - PAD_LEFT) / innerW;
-            const rawIdx = Math.round(ratio * (data.length - 1));
-            const clamped = Math.max(0, Math.min(data.length - 1, rawIdx));
-            onHit(clamped);
-          }}
-          onTouchMove={(e) => {
-            const x = e.nativeEvent.locationX;
-            const ratio = (x - PAD_LEFT) / innerW;
-            const rawIdx = Math.round(ratio * (data.length - 1));
-            const clamped = Math.max(0, Math.min(data.length - 1, rawIdx));
-            onHit(clamped);
-          }}
-        />
-      )}
     </View>
   );
 }
@@ -318,7 +338,7 @@ export default function TrendsScreen() {
               containerW={width - 32}
               activeIndices={activeIndices}
               onHit={(i) => setActiveIndices([i])}
-              onChange={(done) => { if (done) setActiveIndices([]); }}
+              onRelease={() => setActiveIndices([])}
             />
           </View>
         )}
