@@ -1,16 +1,134 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
-// VictoryNative imports removed for v36 compatibility
-// Placeholder chart used temporarily
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
-// Svg imports removed
+import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
+const CHART_H = 200;
+const PAD_LEFT = 65;
+const PAD_RIGHT = 12;
+const PAD_TOP = 12;
+const PAD_BOTTOM = 28;
+
+/* ---------- SVG Mini-Chart ---------- */
+function MiniChart({
+  data,
+  yDomain,
+  containerW,
+  activeIndices,
+  onHit,
+  onChange,
+}: {
+  data: { x: Date; y: number; datum: Snapshot }[];
+  yDomain: [number, number];
+  containerW: number;
+  activeIndices: number[];
+  onHit: (i: number) => void;
+  onChange: (done: boolean) => void;
+}) {
+  const innerW = containerW - PAD_LEFT - PAD_RIGHT;
+  const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
+  const [ys, xs] = [yDomain, [0, innerW]] as [[number, number], [number, number]];
+
+  const sx = (i: number) => (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW + PAD_LEFT);
+  const sy = (v: number) => {
+    if (ys[1] === ys[0]) return PAD_TOP + innerH / 2;
+    return PAD_TOP + innerH - ((v - ys[0]) / (ys[1] - ys[0])) * innerH;
+  };
+
+  // Line path
+  const lineD = data.length > 1
+    ? data.map((d, i) => `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(d.y).toFixed(1)}`).join(' ')
+    : '';
+
+  // Area fill path
+  const areaD = data.length > 1
+    ? lineD + ` L${sx(data.length - 1).toFixed(1)},${PAD_TOP + innerH} L${sx(0).toFixed(1)},${PAD_TOP + innerH} Z`
+    : '';
+
+  // Grid lines (3 y-axis ticks)
+  const isPositive = data.length > 1 ? data[data.length - 1].y >= data[0].y : true;
+  const colorPositive = isPositive ? '#22c55e' : '#3b82f6';
+  const gridTicks = 3;
+  const gridLines = [];
+  for (let i = 0; i <= gridTicks; i++) {
+    const yVal = ys[0] + ((ys[1] - ys[0]) * i) / gridTicks;
+    const yPos = sy(yVal);
+    gridLines.push(
+      <Line key={`grid-${i}`} x1={PAD_LEFT} x2={PAD_LEFT + innerW} y1={yPos} y2={yPos}
+        stroke="#27272a" strokeWidth={1} />,
+      <SvgText key={`y-${i}`} x={PAD_LEFT - 6} y={yPos + 4} fontSize={9} fill="#52525b" textAnchor="end">
+        {yVal >= 1e6 ? `${(yVal / 1e6).toFixed(0)}M` : yVal >= 1e3 ? `${(yVal / 1e3).toFixed(0)}K` : Math.round(yVal)}
+      </SvgText>
+    );
+  }
+
+  // X-axis labels — show ~4 labels
+  const labelStep = Math.max(1, Math.floor(data.length / 4));
+  const xLabels = data.filter((_, i) => i === 0 || i === data.length - 1 || i % labelStep === 0);
+  const xLabelIndices = new Set(xLabels.map(xl => data.indexOf(xl)));
+
+  // Hit areas
+  const hitW = innerW / (data.length || 1);
+
+  return (
+    <View style={{ position: 'relative' }}>
+      <Svg width={containerW} height={CHART_H}>
+        <Defs>
+          <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" />
+            <Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" />
+          </LinearGradient>
+        </Defs>
+        {gridLines}
+        {areaD ? <Path d={areaD} fill="url(#areaGrad)" /> : null}
+        {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
+
+        {/* X labels */}
+        {data.length > 0 && xLabelIndices.size > 0 &&
+          data.filter((d, i) => xLabelIndices.has(i)).map((d, idx) => {
+            const i = data.indexOf(d);
+            const ds = d.datum.snapshot_date.split('T')[0].slice(2);
+            return <SvgText key={`x-${idx}`} x={sx(i)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor="middle">{ds}</SvgText>;
+          })
+        }
+
+        {/* Active point circles */}
+        {activeIndices.map(idx => {
+          if (idx < 0 || idx >= data.length) return null;
+          return <Circle key={`a-${idx}`} cx={sx(idx)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />;
+        })}
+      </Svg>
+      {/* Transparent touch overlay */}
+      {data.length > 1 && (
+        <Pressable
+          style={{ position: 'absolute', top: 0, left: 0, width: containerW, height: CHART_H }}
+          onPressIn={() => onChange(false)}
+          onPressOut={() => onChange(true)}
+          onPress={(e) => {
+            const x = e.nativeEvent.locationX;
+            const ratio = (x - PAD_LEFT) / innerW;
+            const rawIdx = Math.round(ratio * (data.length - 1));
+            const clamped = Math.max(0, Math.min(data.length - 1, rawIdx));
+            onHit(clamped);
+          }}
+          onTouchMove={(e) => {
+            const x = e.nativeEvent.locationX;
+            const ratio = (x - PAD_LEFT) / innerW;
+            const rawIdx = Math.round(ratio * (data.length - 1));
+            const clamped = Math.max(0, Math.min(data.length - 1, rawIdx));
+            onHit(clamped);
+          }}
+        />
+      )}
+    </View>
+  );
+}
 
 interface Portfolio {
   id: string;
@@ -173,10 +291,39 @@ export default function TrendsScreen() {
           </View>
         </View>
 
-        {/* 차트 placeholder */}
-        <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 12, borderWidth: 1, borderColor: '#27272a', marginBottom: 20, height: 200, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: '#52525b', fontSize: 13 }}>차트 준비 중</Text>
-        </View>
+        {/* Line Chart */}
+        {chartData.length > 0 && (
+          <View style={{ backgroundColor: '#18181b', borderRadius: 24, borderWidth: 1, borderColor: '#27272a', marginBottom: 12, overflow: 'hidden' }}>
+            {/* Analysis tooltip */}
+            {analysis && (
+              <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#27272a' }}>
+                {analysis.type === 'SINGLE' ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: '#a1a1aa', fontWeight: '600' }}>{analysis.date}</Text>
+                    <Text style={{ fontSize: 13, color: '#f4f4f5', fontWeight: '800' }}>{formatCurrency(analysis.value)}</Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: '#a1a1aa', fontWeight: '600' }}>{analysis.start} ~ {analysis.end}</Text>
+                    <Text style={{ fontSize: 13, color: analysis.diff >= 0 ? '#ef4444' : '#3b82f6', fontWeight: '800' }}>
+                      {analysis.diff >= 0 ? '+' : ''}{formatCurrency(analysis.diff)} ({analysis.roi.toFixed(2)}%)
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+            <MiniChart
+              data={chartData}
+              yDomain={yDomain}
+              containerW={width - 32}
+              activeIndices={activeIndices}
+              onHit={(i) => setActiveIndices([i])}
+              onChange={(done) => { if (done) setActiveIndices([]); }}
+            />
+          </View>
+        )}
+
+        {/* Period selector */}
 
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>
           {['1M', '3M', '1Y', 'ALL'].map(p => (
