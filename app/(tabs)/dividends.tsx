@@ -421,7 +421,8 @@ export default function DividendsScreen() {
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {s.estimates.map((e: TrendEstimate, i: number) => e.amount > 0 ? (
                     <TouchableOpacity key={i} onPress={() => setSelectedMonth(i)} style={{
-                      flex: 1, minWidth: '30%', padding: 8, borderRadius: 10, alignItems: 'center', borderWidth: 1,
+                      width: '31%', padding: 8, borderRadius: 10, alignItems: 'center', borderWidth: 1,
+                      flexBasis: '31%',
                       backgroundColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.08)' : 'rgba(59,130,246,0.08)',
                       borderColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.15)' : 'rgba(59,130,246,0.15)',
                     }}>
