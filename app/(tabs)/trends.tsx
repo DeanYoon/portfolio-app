@@ -257,7 +257,7 @@ export default function TrendsScreen() {
   const [selectedPortfolioId, setSelectedPortfolioIdLocal] = useState<'ALL' | string>('ALL');
   const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<Snapshot[]>([]);
-  const [period, setPeriod] = useState<'1M' | '3M' | '1Y' | 'ALL'>('1M');
+  const [period, setPeriod] = useState<'1W' | '1M' | '3M' | 'ALL'>('1M');
 
   // 터치 분석 상태
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
@@ -313,9 +313,9 @@ export default function TrendsScreen() {
     if (period === 'ALL') return allHistory;
     const now = new Date();
     const cutoff = new Date();
-    if (period === '1M') cutoff.setMonth(now.getMonth() - 1);
+    if (period === '1W') cutoff.setDate(now.getDate() - 7);
+    else if (period === '1M') cutoff.setMonth(now.getMonth() - 1);
     else if (period === '3M') cutoff.setMonth(now.getMonth() - 3);
-    else if (period === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
     const cutoffStr = cutoff.toISOString().split('T')[0];
     return allHistory.filter(s => s.snapshot_date >= cutoffStr);
   }, [allHistory, period]);
@@ -419,7 +419,7 @@ export default function TrendsScreen() {
         {/* Period selector */}
 
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>
-          {['1M', '3M', '1Y', 'ALL'].map(p => (
+          {['1W', '1M', '3M', 'ALL'].map(p => (
             <TouchableOpacity key={p} onPress={() => setPeriod(p as any)} style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: period === p ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: period === p ? '#22c55e' : '#27272a', alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '900', color: period === p ? '#052e16' : '#71717a' }}>{p}</Text>
             </TouchableOpacity>
