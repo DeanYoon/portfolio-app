@@ -5,10 +5,12 @@ import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, getFlag } from '@/src/utils/format';
 import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
-import { getTaxRate } from '@/src/utils/dividend-calc';
+import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
+import { endOfMonth, isPast, isSameMonth, parseISO } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
+const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 interface PortfolioItem { id: string; name: string; }
 interface DividendEvent { date: string; amount: number; totalForHolding: number; currency: string; }
@@ -17,6 +19,12 @@ interface StockDividendData {
   dividends: DividendEvent[];
   totalDividends: number; totalValueForHolding: number;
   currency: string; country: string;
+}
+interface StockAnalysis {
+  ticker: string; name: string; country: string; currency: string; quantity: number;
+  analysis: ReturnType<typeof calculateDividendYield>;
+  estimates: TrendEstimate[];
+  tax: number; annualKrw: number;
 }
 
 export default function DividendsScreen() {
@@ -33,6 +41,8 @@ export default function DividendsScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
+  const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
+  const [historicalPrices, setHistoricalPrices] = useState<Record<string, any>>({});
 
   // ── Portfolios ──
   useEffect(() => {
@@ -70,28 +80,72 @@ export default function DividendsScreen() {
         jpFundData = data || [];
       }
 
-      // 3. 환율 로드 (모든 non-JP 티커 포함해서)
+      // 3. 가격 + 환율 로드
       const usTickers = rawTickers.filter(t => {
         const h = holdings.find((hh: any) => hh.ticker === t);
         return h && h.currency !== 'JPY';
       });
+      let prices: Record<string, any> = {};
+      const priceMap: Record<string, number> = {};
       if (usTickers.length > 0) {
         try {
-          const rateTickers = [...new Set(['USDKRW=X', 'JPYKRW=X', 'KRWKRW=X'])];
-          const res = await fetch(`${VERCEL_API}/quote?symbols=${rateTickers.join(',')}`);
+          const allTickers = [...new Set([...usTickers, 'USDKRW=X', 'JPYKRW=X'])];
+          const res = await fetch(`${VERCEL_API}/quote?symbols=${allTickers.join(',')}`);
           if (res.ok) {
-            const rates = await res.json();
-            setExchangeRates({
-              usdkrw: rates['USDKRW=X']?.price || 1400,
-              jpykrw: rates['JPYKRW=X']?.price || 9.5,
-            });
+            prices = await res.json();
+            for (const [sym, val] of Object.entries(prices)) {
+              const v = val as any;
+              if (v.price) priceMap[sym] = v.price;
+            }
           }
-        } catch (e) {
-          console.error('Exchange rate fetch error:', e);
-        }
+        } catch (e) { console.error('Price fetch error:', e); }
       }
 
-      // 4. 종목별 배당 데이터 수집 (병렬)
+      setExchangeRates({
+        usdkrw: prices['USDKRW=X']?.price || 1400,
+        jpykrw: prices['JPYKRW=X']?.price || 9.5,
+      });
+      setStockPrices(priceMap);
+
+      // 4. 과거 주가 로드 (트렌드 예측용) — yahoo-finance-api 경유
+      // Response: { "AAPL": { "2025-04-07": {open, high, low, close, ...}, ... } }
+      const histPromises = rawTickers.map(async (ticker) => {
+        try {
+          const histRes = await fetch(`${VERCEL_API}/history?symbols=${ticker}&period=1y`);
+          if (histRes.ok) {
+            const j = await histRes.json();
+            const tData = j?.[ticker];
+            if (tData && typeof tData === 'object' && !Array.isArray(tData)) {
+              // date-keyed object → dividendDatePrices
+              const priceMap2: Record<string, number> = {};
+              const cy = new Date().getFullYear();
+              const lm = new Date().getMonth();
+              for (const [dateStr, bar] of Object.entries(tData)) {
+                const b = bar as any;
+                if (b.close != null) priceMap2[dateStr] = b.close;
+              }
+              // last year same month price
+              const lyDate = `${cy - 1}-${String(lm + 1).padStart(2, '0')}`;
+              let lastYearPrice: number | null = null;
+              for (const [d, p] of Object.entries(priceMap2)) {
+                if (d.startsWith(lyDate)) { lastYearPrice = p; break; }
+              }
+              return { ticker, data: { dividendDatePrices: priceMap2, lastYearSameMonthPrice: lastYearPrice } };
+            }
+          }
+        } catch {}
+        return { ticker, data: null };
+      });
+      const histResults = await Promise.all(histPromises);
+      const histMap: Record<string, any> = {};
+      for (const r of histResults) {
+        if (r.data) {
+          histMap[r.ticker] = r.data;
+        }
+      }
+      setHistoricalPrices(histMap);
+
+      // 5. 종목별 배당 데이터 수집 (병렬)
       const dividendPromises = rawTickers.map(async (rawTicker: string) => {
         const holding = holdings.find((h: any) => h.ticker === rawTicker);
         const isJpFund = holding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
@@ -102,7 +156,6 @@ export default function DividendsScreen() {
         let fetchedCurrency = holding?.currency || 'USD';
 
         if (isJpFund) {
-          // 일본 펀드 → Supabase japan_funds 캐시
           const fund = jpFundData.find((f: any) => f.fcode === rawTicker);
           if (fund?.dividend_data && Array.isArray(fund.dividend_data) && fund.dividend_data.length > 0) {
             dividends = fund.dividend_data
@@ -111,16 +164,14 @@ export default function DividendsScreen() {
           }
           fetchedCurrency = 'JPY';
         } else {
-          // US/KR → Yahoo Finance API 경유
           let ticker = rawTicker;
           if (/^[0-9]{6}$/.test(ticker)) ticker = `${ticker}.KS`;
           if (/^[0-9]{4}$/.test(ticker)) ticker = `${ticker}.T`;
 
           try {
-            const apiRes = await fetch(`${VERCEL_API}/dividends?symbols=${ticker}&years=5`);
+            const apiRes = await fetch(`${VERCEL_API}/dividends?symbols=${ticker}&years=2`);
             if (apiRes.ok) {
               const j = await apiRes.json();
-              // Response format varies: { "QQQ": [{date, amount}, ...] } OR { "AAPL": { dividends: [...], currency: "USD" } }
               const tData = j?.[ticker];
               if (Array.isArray(tData) && tData.length > 0) {
                 dividends = tData
@@ -142,7 +193,6 @@ export default function DividendsScreen() {
 
         if (dividends.length === 0) return null;
 
-        const tax = getTaxRate(holding?.country || 'US', isAfterTax);
         return {
           ticker: rawTicker,
           name: holding?.name || rawTicker,
@@ -150,11 +200,11 @@ export default function DividendsScreen() {
           dividends: dividends.map((d: any) => ({
             date: d.date,
             amount: d.amount,
-            totalForHolding: d.amount * effectiveQty * tax,
+            totalForHolding: d.amount * effectiveQty,
             currency: fetchedCurrency,
           })),
           totalDividends: dividends.reduce((s, d) => s + d.amount, 0),
-          totalValueForHolding: dividends.reduce((s, d) => s + d.amount * effectiveQty * tax, 0),
+          totalValueForHolding: dividends.reduce((s, d) => s + d.amount * effectiveQty, 0),
           currency: fetchedCurrency,
           country: holding?.country || 'US',
         };
@@ -172,7 +222,7 @@ export default function DividendsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [isAfterTax]);
+  }, []);
 
   useEffect(() => { if (selectedPortfolioId) fetchDividends(selectedPortfolioId); }, [selectedPortfolioId, fetchDividends]);
 
@@ -184,33 +234,62 @@ export default function DividendsScreen() {
     return amt;
   }, [exchangeRates]);
 
-  // ── Monthly aggregation ──
+  // ── Monthly aggregation with trend estimates ──
   const monthlyData = useMemo(() => {
     if (!stockDividends.length) return [];
     const cy = new Date().getFullYear();
-    const currentMonth = new Date().getMonth();
+    const today = new Date();
     return Array.from({ length: 12 }, (_, m) => {
       let total = 0;
       for (const sd of stockDividends) {
+        const tax = getTaxRate(sd.country, isAfterTax);
+        // 실제 데이터
         const act = sd.dividends.find(d => {
           const dd = new Date(d.date);
           return dd.getFullYear() === cy && dd.getMonth() === m;
         });
         if (act) {
-          total += convKrw(act.totalForHolding, sd.currency);
+          total += convKrw(act.totalForHolding * tax, sd.currency);
+        } else {
+          // 예측 데이터
+          const est = calculateLatestTrendEstimate(
+            sd.dividends as any, historicalPrices,
+            stockPrices[sd.ticker] || 0, m, cy, sd.ticker,
+            isKrwMode, 1
+          );
+          total += convKrw(est.amount * sd.quantity * tax, sd.currency);
         }
       }
+      const md = new Date(cy, m, 15);
+      const past = isPast(endOfMonth(md)) && !isSameMonth(md, today);
       return {
         month: m,
         label: `${m + 1}월`,
         value: Math.round(total),
-        type: m <= currentMonth ? 'actual' as const : 'estimate' as const,
+        type: past ? 'actual' as const : 'estimate' as const,
       };
     });
-  }, [stockDividends, convKrw]);
+  }, [stockDividends, historicalPrices, stockPrices, isKrwMode, isAfterTax, convKrw]);
 
   const totalAnnual = monthlyData.reduce((s, m) => s + m.value, 0);
   const monthVal = selectedMonth !== null ? monthlyData[selectedMonth]?.value ?? 0 : 0;
+
+  // ── Stock analysis list ──
+  const analysisList: StockAnalysis[] = useMemo(() => {
+    if (!stockDividends.length) return [];
+    const cy = new Date().getFullYear();
+    return stockDividends.map(sd => {
+      const tax = getTaxRate(sd.country, isAfterTax);
+      const analysis = calculateDividendYield(sd.dividends as any, stockPrices[sd.ticker] || 0, sd.ticker);
+      const estimates: TrendEstimate[] = Array.from({ length: 12 }, (_, m) =>
+        calculateLatestTrendEstimate(sd.dividends as any, historicalPrices, stockPrices[sd.ticker] || 0, m, cy, sd.ticker, isKrwMode, 1)
+      );
+      const annualKrw = estimates.reduce((s, e) => s + convKrw(e.amount * sd.quantity * tax, sd.currency), 0);
+      return { ticker: sd.ticker, name: sd.name, country: sd.country, currency: sd.currency, quantity: sd.quantity, analysis, estimates, tax, annualKrw };
+    }).sort((a, b) => b.annualKrw - a.annualKrw);
+  }, [stockDividends, stockPrices, historicalPrices, isKrwMode, isAfterTax, convKrw]);
+
+  const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
 
   if (loading && !stockDividends.length) {
     return <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /><Text style={{ color: '#71717a', marginTop: 12, fontSize: 13, fontWeight: '700' }}>배당 데이터를 불러오는 중...</Text></View>;
@@ -218,9 +297,10 @@ export default function DividendsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
+      {/* Portfolio selector */}
       <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
-        <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
+        <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.pbtn}>
+          <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
       </View>
@@ -243,7 +323,7 @@ export default function DividendsScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <View>
               <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5' }}>📊 연간 배당 흐름</Text>
-              <Text style={{ fontSize: 9, color: '#71717a', marginTop: 2, fontWeight: '700' }}>{stockDividends.length}종목 · 실제 지급 기준</Text>
+              <Text style={{ fontSize: 9, color: '#71717a', marginTop: 2, fontWeight: '700' }}>트렌드 예측 모델</Text>
             </View>
             <TrendingUp size={24} color="#27272a" style={{ opacity: 0.3 }} />
           </View>
@@ -276,7 +356,7 @@ export default function DividendsScreen() {
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ade80' }} /><Text style={{ fontSize: 10, color: '#52525b', fontWeight: '700' }}>실제</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' }} /><Text style={{ fontSize: 10, color: '#52525b', fontWeight: '700' }}>예상</Text>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' }} /><Text style={{ fontSize: 10, color: '#52525b', fontWeight: '700' }}>예측</Text>
             </View>
           </View>
         </View>
@@ -295,36 +375,85 @@ export default function DividendsScreen() {
 
         {/* Stock list */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={{ fontSize: 10, fontWeight: '900', color: '#3f3f46', letterSpacing: 2 }}>종목별 배당 현황</Text>
-          <Text style={{ fontSize: 10, color: '#52525b', fontWeight: '800' }}>{stockDividends.length}종목</Text>
+          <Text style={{ fontSize: 10, fontWeight: '900', color: '#3f3f46', letterSpacing: 2 }}>종목별 배당 분석</Text>
+          <Text style={{ fontSize: 10, color: '#52525b', fontWeight: '800' }}>{filteredList.length}종목</Text>
         </View>
 
-        {stockDividends.map((sd: StockDividendData) => {
-          const yearTotal = sd.dividends.filter(d => new Date(d.date).getFullYear() === new Date().getFullYear()).reduce((s, d) => s + convKrw(d.totalForHolding, sd.currency), 0);
-
+        {filteredList.map((s: StockAnalysis) => {
+          const est = selectedMonth !== null ? s.estimates[selectedMonth] : null;
           return (
-            <View key={sd.ticker} style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#27272a', marginBottom: 12 }}>
+            <View key={s.ticker} style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#27272a', marginBottom: 12 }}>
+              {/* Header */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '900', color: '#f4f4f5' }}>{sd.name}</Text>
-                  <Text style={{ fontSize: 10, color: '#71717a', fontWeight: '700', marginTop: 2 }}>{sd.ticker} · {getFlag(sd.country === 'JP' ? 'JP' : sd.country === 'KR' ? 'KR' : 'US')} {sd.quantity}주</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '900', color: '#f4f4f5' }}>{s.name}</Text>
+                  <Text style={{ fontSize: 10, color: '#71717a', fontWeight: '700', marginTop: 2 }}>{s.ticker} · {getFlag(s.country === 'JP' ? 'JP' : s.country === 'KR' ? 'KR' : 'US')} {s.quantity}주</Text>
                 </View>
-                <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(yearTotal)}</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#22c55e' }}>{formatCurrency(s.annualKrw)}</Text>
               </View>
 
-              {sd.dividends.slice(0, 8).map((d: any, i: number) => (
-                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: i < Math.min(sd.dividends.length, 8) - 1 ? 1 : 0, borderBottomColor: '#27272a' }}>
-                  <Text style={{ fontSize: 12, color: '#71717a' }}>{d.date}</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#e4e4e7' }}>{formatCurrency(d.totalForHolding, sd.currency)}</Text>
+              {/* Yield badges */}
+              <View style={{ backgroundColor: '#09090b', borderRadius: 12, padding: 10, marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                  <View style={{ backgroundColor: '#052e16', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#4ade80' }}>최근 {s.analysis.singleYieldPercent.toFixed(2)}%</Text>
+                  </View>
+                  {s.analysis.paymentsPerYear > 0 && (
+                    <View style={{ backgroundColor: '#172554', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: '#3b82f6' }}>연환산 {s.analysis.yieldPercent.toFixed(2)}%</Text>
+                    </View>
+                  )}
                 </View>
-              ))}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View><Text style={{ fontSize: 8, color: '#52525b', fontWeight: '700' }}>지급주기</Text><Text style={{ fontSize: 11, fontWeight: '800', color: '#a1a1aa' }}>{s.analysis.isMonthly ? '매월' : `연 ${s.analysis.paymentsPerYear || 4}회`}</Text></View>
+                  <View><Text style={{ fontSize: 8, color: '#52525b', fontWeight: '700' }}>현재가</Text><Text style={{ fontSize: 11, fontWeight: '800', color: '#a1a1aa' }}>{formatCurrency(s.analysis.currentPrice, s.currency)}</Text></View>
+                  <View><Text style={{ fontSize: 8, color: '#52525b', fontWeight: '700' }}>연간예상</Text><Text style={{ fontSize: 11, fontWeight: '800', color: '#22c55e' }}>{formatCurrency(s.analysis.annualDividendPerShare, s.currency)}</Text></View>
+                </View>
+              </View>
+
+              {/* Monthly breakdown or single month detail */}
+              {selectedMonth === null ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {s.estimates.map((e: TrendEstimate, i: number) => e.amount > 0 ? (
+                    <TouchableOpacity key={i} onPress={() => setSelectedMonth(i)} style={{
+                      width: (SCREEN_WIDTH - 104) / 3, padding: 8, borderRadius: 10, alignItems: 'center', borderWidth: 1,
+                      backgroundColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.08)' : 'rgba(59,130,246,0.08)',
+                      borderColor: e.calculationMethod === 'actual' ? 'rgba(74,222,128,0.15)' : 'rgba(59,130,246,0.15)',
+                    }}>
+                      <Text style={{ fontSize: 9, color: '#71717a', fontWeight: '700' }}>{i + 1}월</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: e.calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }}>
+                        {formatCurrency(convKrw(e.amount * s.quantity * s.tax, s.currency))}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null)}
+                </View>
+              ) : est && est.amount > 0 ? (
+                <View style={{ borderTopWidth: 1, borderTopColor: '#27272a', paddingTop: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: est.calculationMethod === 'actual' ? '#4ade80' : '#3b82f6' }} />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#f4f4f5' }}>
+                        {est.calculationMethod === 'actual' ? '지급 완료' : est.calculationMethod === 'price_trend' ? '주가 기반 예측' : '배당 이력 기반'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#f4f4f5' }}>
+                      {formatCurrency(convKrw(est.amount * s.quantity * s.tax, s.currency))}
+                    </Text>
+                  </View>
+                  {est.calculationMethod !== 'actual' && est.calculationFormula && (
+                    <View style={{ marginTop: 8, backgroundColor: '#09090b', borderRadius: 10, padding: 8 }}>
+                      <Text style={{ fontSize: 10, color: '#71717a' }}>{est.calculationFormula}</Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
             </View>
           );
         })}
 
-        {stockDividends.length === 0 && !loading && (
+        {filteredList.length === 0 && stockDividends.length > 0 && (
           <View style={{ padding: 40, alignItems: 'center' }}>
-            <Text style={{ color: '#52525b', fontSize: 13, fontWeight: '700' }}>배당 데이터가 없습니다</Text>
+            <Text style={{ color: '#52525b', fontSize: 13, fontWeight: '700' }}>이 달에 배당이 없습니다</Text>
           </View>
         )}
 
@@ -350,3 +479,8 @@ export default function DividendsScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  pbtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  ptxt: { fontSize: 14, fontWeight: '800', color: '#e4e4e7' },
+});
