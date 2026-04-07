@@ -5,6 +5,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
 import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const SPARKLINE_H = 200;
@@ -31,6 +32,7 @@ interface HistoryPoint {
 export default function StockDetailScreen() {
   const { ticker: encodedTicker } = useLocalSearchParams<{ ticker: string }>();
   const ticker = encodedTicker ? decodeURIComponent(encodedTicker) : '';
+  const insets = useSafeAreaInsets();
   
   const [priceData, setPriceData] = useState<PriceData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
@@ -164,22 +166,22 @@ export default function StockDetailScreen() {
   const isPositive = priceData.change_percent >= 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#09090b' }}>
+    <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
+      {/* Fixed Header */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#27272a', backgroundColor: '#09090b' }}>
+        <TouchableOpacity onPress={() => { try { if (typeof window !== 'undefined' && window.history.length > 1) window.history.back(); else router.replace('/'); } catch { router.replace('/'); } }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} hitSlop={12}>
+          <ArrowLeft size={24} color="#e4e4e7" />
+          <View>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: '#f4f4f5' }}>{priceData.name}</Text>
+            <Text style={{ fontSize: 12, color: '#71717a' }}>{ticker}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />}
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
       >
-        {/* 헤더 */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 16 }}>
-            <ArrowLeft size={24} color="#e4e4e7" />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{priceData.name}</Text>
-            <Text style={{ fontSize: 14, color: '#71717a', marginTop: 2 }}>{ticker}</Text>
-          </View>
-        </View>
-
         {/* 현재가 및 차트 */}
         <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
           <Text style={{ fontSize: 36, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>
