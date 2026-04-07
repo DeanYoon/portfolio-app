@@ -9,9 +9,10 @@ import { calculateTax } from '@/src/utils/math';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw,
-  LogOut, ChevronDown, ArrowUpRight, ArrowDownRight, 
-  DollarSign, ArrowUpDown
+  LogOut, ChevronDown, ArrowUpRight, ArrowDownRight,
+  DollarSign, ArrowUpDown, Plus,
 } from 'lucide-react-native';
+import HoldingModal from '@/src/components/holding-modal';
 
 // ─── Types ───
 interface Portfolio {
@@ -166,6 +167,8 @@ export default function DashboardScreen() {
   // New State for parity with dashboard
   const [sortBy, setSortBy] = useState<SortType>('value');
   const [isLocalCurrency, setIsLocalCurrency] = useState(false);
+  const [showHoldingModal, setShowHoldingModal] = useState(false);
+  const [editHolding, setEditHolding] = useState<any>(null);
 
   const loadDashboard = useCallback(async () => {
     if (!session) return;
@@ -301,6 +304,9 @@ export default function DashboardScreen() {
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
+            <Plus size={20} color="#052e16" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => setIsLocalCurrency(!isLocalCurrency)} style={{ padding: 8, backgroundColor: isLocalCurrency ? '#22c55e' : 'transparent', borderRadius: 8 }}>
             <DollarSign size={20} color={isLocalCurrency ? '#052e16' : '#71717a'} />
           </TouchableOpacity>
@@ -369,7 +375,7 @@ export default function DashboardScreen() {
 
         {/* 정렬 셀렉터 */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>HOLDINGS</Text>
+          <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>HOLDINGS · 길게눌러 수정</Text>
           <TouchableOpacity 
             onPress={() => {
               const types: SortType[] = ['value', 'profit', 'rate', 'name'];
@@ -393,6 +399,7 @@ export default function DashboardScreen() {
                 <TouchableOpacity
                   key={h.id}
                   onPress={() => router.push(`/stock/${encodeURIComponent(h.ticker)}`)}
+                  onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -437,6 +444,16 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Holdings 추가/수정 모달 */}
+      <HoldingModal
+        visible={showHoldingModal}
+        onClose={() => { setShowHoldingModal(false); setEditHolding(null); }}
+        portfolioId={selectedId || portfolios[0]?.id || ''}
+        holdingId={editHolding?.id}
+        initialData={editHolding ? { ...editHolding, avg_price: editHolding.avg_price } : undefined}
+        onSuccess={() => { loadDashboard(); }}
+      />
     </View>
   );
 }
