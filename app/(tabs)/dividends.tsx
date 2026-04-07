@@ -80,31 +80,43 @@ export default function DividendsScreen() {
         jpFundData = data || [];
       }
 
-      // 3. 가격 + 환율 로드
-      const usTickers = rawTickers.filter(t => {
-        const h = holdings.find((hh: any) => hh.ticker === t);
-        return h && h.currency !== 'JPY';
-      });
-      let prices: Record<string, any> = {};
-      const priceMap: Record<string, number> = {};
-      if (usTickers.length > 0) {
-        try {
-          const allTickers = [...new Set([...usTickers, 'USDKRW=X', 'JPYKRW=X'])];
-          const res = await fetch(`${VERCEL_API}/quote?symbols=${allTickers.join(',')}`);
-          if (res.ok) {
-            prices = await res.json();
-            for (const [sym, val] of Object.entries(prices)) {
-              const v = val as any;
-              if (v.price) priceMap[sym] = v.price;
-            }
-          }
-        } catch (e) { console.error('Price fetch error:', e); }
+      // 3. 가격 + 환율 로드 (raw ticker → API ticker 매핑)
+      const rawToApi: Record<string, string> = {};
+      const apiTickerSet = new Set<string>();
+      for (const rawTicker of rawTickers) {
+        const h = holdings.find((hh: any) => hh.ticker === rawTicker);
+        if (h?.currency === 'JPY') continue; // JP 펀드는 제외 (아래에서 캐시로 처리)
+        let apiTicker = rawTicker;
+        if (/^[0-9]{6}$/.test(apiTicker)) apiTicker = `${apiTicker}.KS`;
+        else if (/^[0-9]{4}$/.test(apiTicker)) apiTicker = `${apiTicker}.T`;
+        rawToApi[rawTicker] = apiTicker;
+        apiTickerSet.add(apiTicker);
       }
+      apiTickerSet.add('USDKRW=X');
+      apiTickerSet.add('JPYKRW=X');
 
-      setExchangeRates({
-        usdkrw: prices['USDKRW=X']?.price || 1400,
-        jpykrw: prices['JPYKRW=X']?.price || 9.5,
-      });
+      const priceMap: Record<string, number> = {};
+      try {
+        const res = await fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`);
+        if (res.ok) {
+          const apiRes = await res.json();
+          for (const [rawTicker, apiTicker] of Object.entries(rawToApi)) {
+            const v = apiRes?.[apiTicker];
+            if (v?.price) priceMap[rawTicker] = v.price;
+          }
+          setExchangeRates({
+            usdkrw: apiRes['USDKRW=X']?.price || 1400,
+            jpykrw: apiRes['JPYKRW=X']?.price || 9.5,
+          });
+        }
+      } catch (e) { console.error('Price fetch error:', e); }
+
+      // 일본 펀드 현재가 → Supabase 캐시에서
+      for (const fund of jpFundData) {
+        if (fund.price_data?.price) {
+          priceMap[fund.fcode] = fund.price_data.price;
+        }
+      }
       setStockPrices(priceMap);
 
       // 4. 과거 주가 로드 (트렌드 예측용) — yahoo-finance-api 경유
