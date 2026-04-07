@@ -182,8 +182,8 @@ function MiniChart({
           />
         )}
 
-        {/* Crosshair vertical line */}
-        {tooltipInfo?.crosshairX !== null && tooltipInfo.crosshairX !== undefined && (
+        {/* Crosshair vertical line (single point only) */}
+        {tooltipInfo?.highlight === null && tooltipInfo?.crosshairX != null && (
           <Line
             x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX}
             y1={PAD_TOP} y2={PAD_TOP + innerH}
