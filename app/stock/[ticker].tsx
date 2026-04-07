@@ -87,17 +87,14 @@ export default function StockDetailScreen() {
         }
 
         const histJson = await historyRes.json();
-        if (histJson?.[ticker]) {
-          const bars = histJson[ticker].prices || histJson[ticker] || [];
-          if (Array.isArray(bars)) {
-            const points = bars
-              .filter((b: any) => b.close != null)
-              .map((b: any) => ({
-                date: b.date,
-                close: b.close,
-              }));
-            setHistory(points);
-          }
+        if (histJson?.[ticker] && typeof histJson[ticker] === 'object' && !Array.isArray(histJson[ticker])) {
+          // API returns { "2025-10-07": {close, ...}, "2025-10-08": {close, ...}, ... }
+          const entries = Object.entries(histJson[ticker]);
+          const points = entries
+            .map(([date, bar]: [string, any]) => ({ date, close: bar.close }))
+            .filter((b: any) => b.close != null)
+            .sort((a: any, b: any) => a.date.localeCompare(b.date));
+          setHistory(points);
         }
       }
 
