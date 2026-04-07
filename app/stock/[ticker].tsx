@@ -170,10 +170,10 @@ export default function StockDetailScreen() {
       {/* Fixed Header */}
       <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#27272a', backgroundColor: '#09090b' }}>
         <TouchableOpacity onPress={() => { try { if (typeof window !== 'undefined' && window.history.length > 1) window.history.back(); else router.replace('/'); } catch { router.replace('/'); } }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} hitSlop={12}>
-          <ArrowLeft size={24} color="#e4e4e7" />
-          <View>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: '#f4f4f5' }}>{priceData.name}</Text>
-            <Text style={{ fontSize: 12, color: '#71717a' }}>{ticker}</Text>
+          <ArrowLeft size={24} color="#e4e4e7" style={{ flexShrink: 0 }} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: '#f4f4f5' }} numberOfLines={1}>{priceData.name.length > 10 ? priceData.name.slice(0, 10) + '...' : priceData.name}</Text>
+            <Text style={{ fontSize: 12, color: '#71717a' }} numberOfLines={1}>{ticker}</Text>
           </View>
         </TouchableOpacity>
       </View>
