@@ -15,7 +15,7 @@ const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-a
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 interface PortfolioItem { id: string; name: string; }
-interface DividendEvent { date: string; amount: number; close: number; totalForHolding: number; currency: string; }
+interface DividendEvent { date: string; amount: number; close: number; totalForHolding: number; currency: string; ticker: string; }
 interface StockDividendData {
   ticker: string; name: string; quantity: number;
   dividends: DividendEvent[];
@@ -89,7 +89,7 @@ export default function DividendsScreen() {
       if (hErr) throw new Error(hErr.message);
       if (!holdings || holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
 
-      const rawTickers = Array.from(new Set(holdings.map((h: any) => h.ticker as string)));
+      const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
 
       // 2. 일본 펀드 캐시 로드
       const jpTickers = rawTickers.filter(t => {
@@ -154,7 +154,7 @@ export default function DividendsScreen() {
 
       // Fetch dividends for ALL tickers in ONE bulk API call
       const divUrl = `${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`;
-      let bulkDivData: Record<string, any[]> = {};
+      let bulkDivData: Record<string, any> = {};
       try {
         const divRes = await fetch(divUrl);
         if (divRes.ok) {
@@ -197,7 +197,7 @@ export default function DividendsScreen() {
           const tData = bulkDivData[rawTicker];
           if (Array.isArray(tData) && tData.length > 0) {
             dividends = processDivList(tData);
-          } else if (tData?.dividends && Array.isArray(tData.dividends) && tData.dividends.length > 0) {
+          } else if (tData && typeof tData === 'object' && Array.isArray(tData.dividends)) {
             dividends = processDivList(tData.dividends);
             if (tData.currency) fetchedCurrency = tData.currency;
           }
@@ -215,6 +215,7 @@ export default function DividendsScreen() {
             close: d.close ?? 0,
             totalForHolding: d.amount * effectiveQty,
             currency: fetchedCurrency,
+            ticker: rawTicker,
           })),
           totalDividends: dividends.reduce((s, d) => s + d.amount, 0),
           totalValueForHolding: dividends.reduce((s, d) => s + d.amount * effectiveQty, 0),
