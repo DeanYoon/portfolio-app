@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
-import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect, Path as SvgPath } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const CHART_H = 200;
@@ -14,6 +14,110 @@ const PAD_LEFT = 65;
 const PAD_RIGHT = 12;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 28;
+
+/* ---------- Allocation Pie Chart ---------- */
+const PIE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#a855f7', '#6366f1', '#84cc16'];
+
+function AllocationPie({ data, total }: { data: { name: string; ticker: string; value: number; percentage: string }[]; total: number }) {
+  const pieSize = 220;
+  const cx = pieSize / 2;
+  const cy = pieSize / 2;
+  const r = 90;
+  const innerR = 55;
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  const slices = useMemo(() => {
+    if (total === 0 || data.length === 0) return [];
+    const result: { d: string; dInner: string; color: string; midAngle: number; item: typeof data[0]; idx: number }[] = [];
+    let cumAngle = -Math.PI / 2;
+    
+    data.forEach((item, i) => {
+      const sliceAngle = (item.value / total) * 2 * Math.PI;
+      const startAngle = cumAngle;
+      const endAngle = cumAngle + sliceAngle;
+      
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      
+      const ix1 = cx + innerR * Math.cos(startAngle);
+      const iy1 = cy + innerR * Math.sin(startAngle);
+      const ix2 = cx + innerR * Math.cos(endAngle);
+      const iy2 = cy + innerR * Math.sin(endAngle);
+      
+      const largeArc = sliceAngle > Math.PI ? 1 : 0;
+      
+      // Outer arc (clockwise)
+      const d = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix1} ${iy1} Z`;
+      
+      const midAngle = startAngle + sliceAngle / 2;
+      result.push({ d, dInner: '', color: PIE_COLORS[i % PIE_COLORS.length], midAngle, item, idx: i });
+      cumAngle = endAngle;
+    });
+    
+    return result;
+  }, [data, total]);
+
+  const selectedSlice = selectedIndex !== null ? slices[selectedIndex] : null;
+  const tipColor = selectedSlice ? selectedSlice.color : null;
+  const tipItem = selectedSlice?.item;
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Svg width={pieSize} height={pieSize + (selectedSlice ? 50 : 20)}>
+        {/* Center text */}
+        <G>
+          <SvgText x={cx} y={cy - 8} fontSize={11} fill="#52525b" textAnchor="middle">TOTAL</SvgText>
+          {(() => {
+            const displayVal = total >= 1e8 ? `${(total / 1e8).toFixed(2)}억` : total >= 1e6 ? `${(total / 1e6).toFixed(1)}M` : total >= 1e4 ? `${Math.round(total / 1e4).toLocaleString()}만` : Math.round(total).toLocaleString();
+            return <SvgText x={cx} y={cy + 12} fontSize={14} fill="#f4f4f5" fontWeight="900" textAnchor="middle">{displayVal}</SvgText>;
+          })()}
+        </G>
+        
+        {/* Slices */}
+        {slices.map((s, i) => (
+          <Pressable
+            key={s.idx}
+            onPressIn={() => setSelectedIndex(s.idx)}
+            onPress={() => setSelectedIndex(selectedIndex === s.idx ? null : s.idx)}
+            style={{ position: 'absolute', top: 0, left: 0, width: pieSize, height: pieSize }}
+          />
+        ))}
+        {slices.map(s => (
+          <SvgPath key={`slice-${s.idx}`}
+            d={s.d}
+            fill={s.color}
+            opacity={selectedIndex !== null && selectedIndex !== s.idx ? 0.4 : 1}
+            stroke="#09090b"
+            strokeWidth={2}
+          />
+        ))}
+        
+        {/* Selected label below */}
+        {selectedSlice && tipItem && (
+          <G>
+            <SvgText x={cx} y={pieSize + 16} fontSize={10} fill={tipColor} fontWeight="800" textAnchor="middle">{tipItem.name}</SvgText>
+            <SvgText x={cx} y={pieSize + 30} fontSize={11} fill="#f4f4f5" fontWeight="700" textAnchor="middle">
+              ₩{tipItem.value >= 1e8 ? `${(tipItem.value / 1e8).toFixed(2)}억` : tipItem.value >= 1e6 ? `${(tipItem.value / 1e6).toFixed(1)}M` : Math.round(tipItem.value).toLocaleString()}
+            </SvgText>
+            <SvgText x={cx} y={pieSize + 44} fontSize={10} fill="#a1a1aa" fontWeight="600" textAnchor="middle">{tipItem.percentage}%</SvgText>
+          </G>
+        )}
+      </Svg>
+      
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 4, marginTop: 8 }}>
+        {data.slice(0, 8).map((d, i) => (
+          <View key={d.ticker} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+            <Text style={{ fontSize: 9, color: '#a1a1aa', fontWeight: '600' }}>{d.name} {d.percentage}%</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 /* ---------- SVG Mini-Chart ---------- */
 function MiniChart({
@@ -271,6 +375,9 @@ export default function TrendsScreen() {
     })();
   }, []);
 
+  const [holdings, setHoldings] = useState<any[]>([]);
+  const [priceMap, setPriceMap] = useState<Record<string, any>>({});
+
   const fetchData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
@@ -286,6 +393,21 @@ export default function TrendsScreen() {
       const { data: snapshotData, error } = await supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').in('portfolio_id', pIds).order('snapshot_date', { ascending: true });
       if (error) throw error;
       setRawSnapshots(snapshotData || []);
+      // Fetch holdings for allocation
+      const { data: hData } = await supabase.from('holdings').select('id, ticker, name, avg_price, quantity, currency, country, portfolio_id').in('portfolio_id', pIds);
+      setHoldings(hData || []);
+      // Fetch prices
+      if (hData && hData.length > 0) {
+        const tickers = Array.from(new Set([...hData.map(h => h.ticker), 'USDKRW=X', 'JPYKRW=X']));
+        const symbols = tickers.join(',');
+        try {
+          const res = await fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${symbols}`);
+          const json = await res.json();
+          setPriceMap(json || {});
+        } catch (e) {
+          console.error('Failed to fetch prices:', e);
+        }
+      }
     } catch (e) {
       console.error('Error fetching trends data:', e);
     }
@@ -336,6 +458,33 @@ export default function TrendsScreen() {
   const displayedLast = displayedSnapshots[displayedSnapshots.length - 1]?.total_value_krw || 0;
   const periodChange = displayedLast - displayedFirst;
   const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
+
+  // ─── Allocation data ───
+  const [allocationTotal, setAllocationTotal] = useState(0);
+  const allocationData = useMemo(() => {
+    const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
+    if (filtered.length === 0) return [];
+    
+    const usdkrw = priceMap['USDKRW=X']?.price || 1400;
+    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
+    
+    let total = 0;
+    const items = filtered.map(h => {
+      const isCash = h.ticker.startsWith('CASH_');
+      const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
+      const priceInfo = priceMap[h.ticker];
+      const currentPrice = priceInfo?.price || h.avg_price;
+      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
+      const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
+      const effectiveRate = isCash ? 1 : rate;
+      const valueKRW = qty * currentPrice * effectiveRate;
+      total += valueKRW;
+      return { name: h.name || h.ticker, ticker: h.ticker, value: Math.round(valueKRW) };
+    }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
+    
+    setAllocationTotal(Math.round(total));
+    return items.map(a => ({ ...a, percentage: total > 0 ? ((a.value / total) * 100).toFixed(1) : '0' }));
+  }, [holdings, priceMap, selectedPortfolioId]);
 
   // ─── 분석 데이터 렌더링 ───
   const analysis = useMemo((): AnalysisData | null => {
@@ -426,28 +575,19 @@ export default function TrendsScreen() {
           ))}
         </View>
 
-        <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>HISTORY</Text>
-        <View style={{ backgroundColor: '#18181b', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#27272a' }}>
-          {allHistory.slice().reverse().slice(0, 15).map((s, i) => {
-            const diff = s.change || 0;
-            const isPositive = diff > 0;
-            const isNegative = diff < 0;
-            const dStr = s.snapshot_date.split('T')[0];
-            const formattedDate = dStr.slice(2).replace(/-/g, '.');
-            return (
-              <View key={s.snapshot_date} style={{ padding: 16, borderBottomWidth: i === allHistory.length - 1 ? 0 : 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View><Text style={{ fontSize: 14, fontWeight: '700', color: '#e4e4e7' }}>{formattedDate}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    {isPositive && <ArrowUpRight size={10} color="#ef4444" />}
-                    {isNegative && <ArrowDownRight size={10} color="#3b82f6" />}
-                    <Text style={{ fontSize: 11, color: isPositive ? '#ef4444' : (isNegative ? '#3b82f6' : '#52525b'), fontWeight: '600' }}>{diff === 0 ? '변동 없음' : `${diff > 0 ? '+' : ''}${formatCurrency(diff)}`}</Text>
-                  </View>
-                </View>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#f4f4f5' }}>{formatCurrency(s.total_value_krw)}</Text>
-              </View>
-            );
-          })}
-        </View>
+        <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 24, textAlign: 'center' }}>TAP A POINT ON CHART</Text>
+
+        <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>ALLOCATION</Text>
+        {allocationData.length > 0 ? (
+          <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 20, alignItems: 'center' }}>
+            <AllocationPie data={allocationData} total={allocationTotal} />
+            <Text style={{ fontSize: 10, color: '#52525b', marginTop: 8 }}>Tap a slice to see detail</Text>
+          </View>
+        ) : (
+          <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 40, alignItems: 'center', marginBottom: 12 }}>
+            <Text style={{ color: '#52525b', fontSize: 13 }}>자산이 없습니다</Text>
+          </View>
+        )}
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>
