@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
-import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const CHART_H = 200;
@@ -105,9 +105,42 @@ function MiniChart({
     if (i === 0 || i === data.length - 1 || i % labelStep === 0) xLabelIndices.add(i);
   });
 
+  // ─── Floating tooltip position ───
+  const tooltipInfo = useMemo(() => {
+    if (activeIndices.length === 0 || data.length === 0) return null;
+    const shortDate = (ds: string) => ds.split('T')[0].slice(2).replace(/-/g, '.');
+    if (activeIndices.length === 1) {
+      const idx = activeIndices[0];
+      if (idx < 0 || idx >= data.length) return null;
+      const d = data[idx];
+      return {
+        x: sx(idx),
+        y: sy(d.y),
+        lines: [shortDate(d.datum.snapshot_date), formatCurrency(d.y)],
+        highlight: null,
+        crosshairX: sx(idx),
+      };
+    }
+    const iStart = Math.min(activeIndices[0], activeIndices[1]);
+    const iEnd = Math.max(activeIndices[0], activeIndices[1]);
+    if (iStart < 0 || iEnd >= data.length) return null;
+    const s = data[iStart]; const e = data[iEnd];
+    const diff = e.y - s.y;
+    const roi = s.y > 0 ? (diff / s.y) * 100 : 0;
+    return {
+      x: (sx(iStart) + sx(iEnd)) / 2,
+      y: Math.min(sy(s.y), sy(e.y)),
+      lines: [
+        `${shortDate(s.datum.snapshot_date)} ~ ${shortDate(e.datum.snapshot_date)}`,
+        `${diff >= 0 ? '+' : ''}${formatCurrency(diff)} (${roi.toFixed(2)}%)`,
+      ],
+      highlight: { x1: sx(iStart), x2: sx(iEnd) },
+      crosshairX: null,
+    };
+  }, [activeIndices, data, innerW, innerH]);
+
   return (
     <View ref={containerRef} style={{ position: 'relative', cursor: 'crosshair' }}
-      // Native fallback (iOS/Android)
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderMove={(e) => {
@@ -140,11 +173,60 @@ function MiniChart({
           </SvgText>
         ))}
 
+        {/* Range highlight */}
+        {tooltipInfo?.highlight && (
+          <Path
+            d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`}
+            fill={colorPositive}
+            opacity={0.08}
+          />
+        )}
+
+        {/* Crosshair vertical line */}
+        {tooltipInfo?.crosshairX !== null && tooltipInfo.crosshairX !== undefined && (
+          <Line
+            x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX}
+            y1={PAD_TOP} y2={PAD_TOP + innerH}
+            stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4,3" opacity={0.5}
+          />
+        )}
+
         {/* Active point circles */}
         {activeIndices.map(idx => {
           if (idx < 0 || idx >= data.length) return null;
           return <Circle key={`a-${idx}`} cx={sx(idx)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />;
         })}
+
+        {/* Floating tooltip */}
+        {tooltipInfo && (
+          <G>
+            {(() => {
+              const tipY = Math.max(PAD_TOP, tooltipInfo.y - 40);
+              const tipW = 170;
+              const tipH = 42;
+              let tipX = tooltipInfo.x - tipW / 2;
+              // Clamp to chart bounds
+              if (tipX < PAD_LEFT) tipX = PAD_LEFT;
+              if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW;
+              const line2 = tooltipInfo.lines[1];
+              const isRange = line2.includes('(') && line2.includes('%');
+              const tipColor = isRange
+                ? (line2.startsWith('+') ? '#ef4444' : '#3b82f6')
+                : '#f4f4f5';
+              return (
+                <>
+                  <Rect x={tipX} y={tipY} width={tipW} height={tipH}
+                    rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} />
+                  <SvgText x={tipX + tipW / 2} y={tipY + 17} fontSize={9}
+                    fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText>
+                  <SvgText x={tipX + tipW / 2} y={tipY + 32} fontSize={11}
+                    fill={tipColor}
+                    textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText>
+                </>
+              );
+            })()}
+          </G>
+        )}
       </Svg>
     </View>
   );
@@ -314,30 +396,21 @@ export default function TrendsScreen() {
         {/* Line Chart */}
         {chartData.length > 0 && (
           <View style={{ backgroundColor: '#18181b', borderRadius: 24, borderWidth: 1, borderColor: '#27272a', marginBottom: 12, overflow: 'hidden' }}>
-            {/* Analysis tooltip */}
-            {analysis && (
-              <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#27272a' }}>
-                {analysis.type === 'SINGLE' ? (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, color: '#a1a1aa', fontWeight: '600' }}>{analysis.date}</Text>
-                    <Text style={{ fontSize: 13, color: '#f4f4f5', fontWeight: '800' }}>{formatCurrency(analysis.value)}</Text>
-                  </View>
-                ) : (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, color: '#a1a1aa', fontWeight: '600' }}>{analysis.start} ~ {analysis.end}</Text>
-                    <Text style={{ fontSize: 13, color: analysis.diff >= 0 ? '#ef4444' : '#3b82f6', fontWeight: '800' }}>
-                      {analysis.diff >= 0 ? '+' : ''}{formatCurrency(analysis.diff)} ({analysis.roi.toFixed(2)}%)
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
+            {/* Analysis tooltip removed — floating tooltip inside chart now */}
             <MiniChart
               data={chartData}
               yDomain={yDomain}
               containerW={width - 32}
               activeIndices={activeIndices}
-              onHit={(i) => setActiveIndices([i])}
+              onHit={(i) => {
+                setActiveIndices(prev => {
+                  if (prev.length >= 2) return [i]; // 3rd tap → reset to single
+                  if (prev.length === 0) return [i]; // 1st tap
+                  const exists = prev.includes(i);
+                  if (exists) return prev.filter(idx => idx !== i);
+                  return [prev[0], i]; // 2nd tap → range
+                });
+              }}
               onRelease={() => setActiveIndices([])}
             />
           </View>
