@@ -1,5 +1,6 @@
 import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -351,13 +352,26 @@ export default function TrendsScreen() {
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [containerWidth, setContainerWidth] = useState(width - 32);
 
-  // Sync with shared state on mount
+  // Sync with shared state on mount and on app resume
   useEffect(() => {
-    (async () => {
+    const syncState = async () => {
       const saved = await getSelectedPortfolioId();
-      if (saved) setSelectedPortfolioIdLocal(saved);
-    })();
+      setSelectedPortfolioIdLocal(saved || 'ALL');
+    };
+    syncState();
+    
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') syncState();
+    });
+    return () => sub.remove();
   }, []);
+
+  // Re-sync when tab gains focus
+  useFocusEffect(useCallback(() => {
+    getSelectedPortfolioId().then(saved => {
+      if (saved && saved !== selectedPortfolioId) setSelectedPortfolioIdLocal(saved);
+    });
+  }, [selectedPortfolioId]));
 
   const [holdings, setHoldings] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});

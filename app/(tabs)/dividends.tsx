@@ -1,5 +1,6 @@
 import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,13 +53,21 @@ export default function DividendsScreen() {
     })();
   }, [session]);
 
-  // Sync with shared state on mount
+  // Sync with shared state on mount and on app resume
   useEffect(() => {
-    (async () => {
+    const syncState = async () => {
       const saved = await getSelectedPortfolioId();
       if (saved) setSelectedPortfolioIdLocal(saved);
-    })();
+    };
+    syncState();
   }, []);
+
+  // Re-sync when tab gains focus
+  useFocusEffect(useCallback(() => {
+    getSelectedPortfolioId().then(saved => {
+      if (saved && saved !== selectedPortfolioId) setSelectedPortfolioIdLocal(saved);
+    });
+  }, [selectedPortfolioId]));
 
   const setSelectedPortfolioIdShared = async (id: string | null) => {
     setSelectedPortfolioIdLocal(id);

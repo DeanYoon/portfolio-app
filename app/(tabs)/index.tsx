@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Alert, Modal } from 'react-native';
-import { router, Redirect } from 'expo-router';
+import { router, Redirect, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -9,7 +10,7 @@ import { calculateTax } from '@/src/utils/math';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw,
-  LogOut, ChevronDown, ArrowUpRight, ArrowDownRight,
+  ChevronDown, ArrowUpRight, ArrowDownRight,
   DollarSign, ArrowUpDown, Plus,
 } from 'lucide-react-native';
 import HoldingModal from '@/src/components/holding-modal';
@@ -145,13 +146,26 @@ export default function DashboardScreen() {
   const [selectedId, setSelectedIdLocal] = useState<string | undefined>();
   const [dataLoading, setDataLoading] = useState(true);
 
-  // Sync with shared state on mount
+  // Sync with shared state on mount and on app resume
   useEffect(() => {
-    (async () => {
+    const syncState = async () => {
       const saved = await getSelectedPortfolioId();
       setSelectedIdLocal(saved || undefined);
-    })();
+    };
+    syncState();
+    
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') syncState();
+    });
+    return () => sub.remove();
   }, []);
+
+  // Re-sync when tab gains focus (user switches from another tab)
+  useFocusEffect(useCallback(() => {
+    getSelectedPortfolioId().then(saved => {
+      if (saved && saved !== selectedId) setSelectedIdLocal(saved);
+    });
+  }, [selectedId]));
 
   const setSelectedId = async (id: string | undefined) => {
     setSelectedIdLocal(id);
@@ -196,13 +210,6 @@ export default function DashboardScreen() {
   useEffect(() => { if (session) loadDashboard(); }, [session, loadDashboard]);
 
   const onRefresh = useCallback(() => { setRefreshing(true); loadDashboard(); }, [loadDashboard]);
-
-  const handleSignOut = async () => {
-    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      { text: '로그아웃', style: 'destructive', onPress: async () => { const { error } = await signOut(); if (!error) router.replace('/(auth)/login'); } },
-    ]);
-  };
 
   // ─── Computing logic ───
   const processedData = useMemo(() => {
@@ -298,6 +305,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
+      {/* 헤더 */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text>
@@ -306,15 +314,6 @@ export default function DashboardScreen() {
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
             <Plus size={20} color="#052e16" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setIsLocalCurrency(!isLocalCurrency)} style={{ padding: 8, backgroundColor: isLocalCurrency ? '#22c55e' : 'transparent', borderRadius: 8 }}>
-            <DollarSign size={20} color={isLocalCurrency ? '#052e16' : '#71717a'} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onRefresh} style={{ padding: 8 }}>
-            <RefreshCw size={20} color="#71717a" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSignOut} style={{ padding: 8 }}>
-            <LogOut size={20} color="#71717a" />
           </TouchableOpacity>
         </View>
       </View>
