@@ -77,8 +77,9 @@ function AllocationPie({ data, total }: { data: { name: string; fullName?: strin
       </View>
 
       {/* Allocation List */}
-      <View style={{ width: '100%', marginTop: 8 }}>
-        {data.map((item: any, index: number) => (
+      <View style={{ width: '100%', marginTop: 8, maxHeight: 200 }}>
+        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+          {data.map((item: any, index: number) => (
           <View key={item.ticker} style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(63,63,70,0.3)' }}>
             {/* Left: color dot + name/ticker */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -96,6 +97,7 @@ function AllocationPie({ data, total }: { data: { name: string; fullName?: strin
             </View>
           </View>
         ))}
+        </ScrollView>
       </View>
     </View>
   );
