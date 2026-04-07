@@ -193,7 +193,8 @@ export default function DashboardScreen() {
         const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
         const isCash = h.ticker.startsWith('CASH_');
         const qty = isJpFund ? h.quantity / 10000 : h.quantity;
-        const effRate = isCash ? 1 : rate;
+        // 현금은 원화 단위일 때 환율 적용 (USD/JPY 현금)
+        const effRate = rate;
         
         const valueLocal = qty * cp;
         const initialLocal = qty * (isCash ? cp : h.avg_price);
