@@ -14,7 +14,7 @@ const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-a
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 interface PortfolioItem { id: string; name: string; }
-interface DividendEvent { date: string; amount: number; totalForHolding: number; currency: string; }
+interface DividendEvent { date: string; amount: number; close: number; totalForHolding: number; currency: string; }
 interface StockDividendData {
   ticker: string; name: string; quantity: number;
   dividends: DividendEvent[];
@@ -44,9 +44,6 @@ export default function DividendsScreen() {
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
-  const [historicalPrices, setHistoricalPrices] = useState<Record<string, any>>({});
-
-  // ── Portfolios ──
   useEffect(() => {
     if (!session) return;
     (async () => {
