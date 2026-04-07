@@ -4,8 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide-react-native';
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
+import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
+const SPARKLINE_H = 200;
+const SPARKLINE_PAD = { top: 12, bottom: 28, left: 10, right: 10 };
 
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
 const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
@@ -119,6 +122,37 @@ export default function StockDetailScreen() {
     fetchStockData();
   }, [fetchStockData]);
 
+  // Set page title for web
+  useEffect(() => {
+    if (priceData?.name) {
+      document.title = `${priceData.name} (${ticker}) — 상세 정보`;
+    }
+  }, [priceData, ticker]);
+
+  // Mini chart data
+  const chartLine = useMemo(() => {
+    if (history.length < 2) return '';
+    const innerW = width - 32 - SPARKLINE_PAD.left - SPARKLINE_PAD.right;
+    const innerH = SPARKLINE_H - SPARKLINE_PAD.top - SPARKLINE_PAD.bottom;
+    const closes = history.map(h => h.close);
+    const minC = Math.min(...closes);
+    const maxC = Math.max(...closes);
+    const range = maxC - minC || 1;
+
+    return history.map((h, i) => {
+      const x = SPARKLINE_PAD.left + (i / (history.length - 1)) * innerW;
+      const y = SPARKLINE_PAD.top + innerH - ((h.close - minC) / range) * innerH;
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  }, [history]);
+
+  const chartArea = useMemo(() => {
+    if (history.length < 2 || !chartLine) return '';
+    const innerW = width - 32 - SPARKLINE_PAD.left - SPARKLINE_PAD.right;
+    const bottomY = SPARKLINE_H - SPARKLINE_PAD.bottom;
+    return chartLine + ` L${(SPARKLINE_PAD.left + innerW).toFixed(1)},${bottomY} L${SPARKLINE_PAD.left},${bottomY} Z`;
+  }, [history, chartLine]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStockData();
@@ -144,8 +178,8 @@ export default function StockDetailScreen() {
             <ArrowLeft size={24} color="#e4e4e7" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{ticker}</Text>
-            <Text style={{ fontSize: 14, color: '#71717a', marginTop: 2 }}>{priceData.name}</Text>
+            <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{priceData.name}</Text>
+            <Text style={{ fontSize: 14, color: '#71717a', marginTop: 2 }}>{ticker}</Text>
           </View>
         </View>
 
@@ -160,9 +194,37 @@ export default function StockDetailScreen() {
             </Text>
           </View>
 
-          <View style={{ height: 180, backgroundColor: '#18181b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a', justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: '#52525b', fontSize: 13 }}>차트 준비 중</Text>
-          </View>
+          {/* Price sparkline chart */}
+          {chartLine ? (
+            <View style={{ height: SPARKLINE_H, backgroundColor: '#09090b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a', overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }}>
+              <Svg width={width - 32} height={SPARKLINE_H}>
+                <Defs>
+                  <LinearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0%" stopColor={isPositive ? '#ef4444' : '#3b82f6'} stopOpacity="0.3" />
+                    <Stop offset="100%" stopColor={isPositive ? '#ef4444' : '#3b82f6'} stopOpacity="0.02" />
+                  </LinearGradient>
+                </Defs>
+                {chartArea ? <Path d={chartArea} fill="url(#sparkGrad)" /> : null}
+                {chartLine ? <Path d={chartLine} fill="none" stroke={isPositive ? '#ef4444' : '#3b82f6'} strokeWidth={2} strokeLinejoin="round" /> : null}
+                {/* End dot */}
+                {(() => {
+                  if (history.length < 2) return null;
+                  const lastX = (width - 32 - SPARKLINE_PAD.right);
+                  const closes = history.map(h => h.close);
+                  const minC = Math.min(...closes);
+                  const maxC = Math.max(...closes);
+                  const range = maxC - minC || 1;
+                  const innerH = SPARKLINE_H - SPARKLINE_PAD.top - SPARKLINE_PAD.bottom;
+                  const lastY = SPARKLINE_PAD.top + innerH - ((history[history.length - 1].close - minC) / range) * innerH;
+                  return <circle cx={lastX} cy={lastY} r={4} fill={isPositive ? '#ef4444' : '#3b82f6'} />;
+                })()}
+              </Svg>
+            </View>
+          ) : (
+            <View style={{ height: SPARKLINE_H, backgroundColor: '#09090b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a', justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color: '#52525b', fontSize: 13 }}>데이터 없음</Text>
+            </View>
+          )}
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
             {['1mo', '6mo', '1y'].map(p => (
