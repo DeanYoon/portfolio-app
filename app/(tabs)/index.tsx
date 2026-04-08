@@ -180,6 +180,7 @@ export default function DashboardScreen() {
   
   // New State for parity with dashboard
   const [sortBy, setSortBy] = useState<SortType>('value');
+  const [isTodayMode, setIsTodayMode] = useState(false);
   const [isLocalCurrency, setIsLocalCurrency] = useState(false);
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
@@ -313,6 +314,9 @@ export default function DashboardScreen() {
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+            <RefreshCw size={20} color="#e4e4e7" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
             <Plus size={20} color="#052e16" />
           </TouchableOpacity>
@@ -376,19 +380,27 @@ export default function DashboardScreen() {
         {/* 정렬 셀렉터 */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>HOLDINGS · 길게눌러 수정</Text>
-          <TouchableOpacity 
-            onPress={() => {
-              const types: SortType[] = ['value', 'profit', 'rate', 'name'];
-              const next = types[(types.indexOf(sortBy) + 1) % types.length];
-              setSortBy(next);
-            }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#18181b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
-          >
-            <ArrowUpDown size={12} color="#71717a" />
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#71717a' }}>
-              {sortBy === 'value' ? '가치순' : sortBy === 'profit' ? '수익순' : sortBy === 'rate' ? '수익률순' : '이름순'}
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity 
+              onPress={() => setIsTodayMode(!isTodayMode)}
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isTodayMode ? '#1e3a5f' : '#18181b', borderWidth: 1, borderColor: isTodayMode ? '#3b82f6' : '#27272a' }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '700', color: isTodayMode ? '#3b82f6' : '#71717a' }}>오늘 기준</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => {
+                const types: SortType[] = ['value', 'profit', 'rate', 'name'];
+                const next = types[(types.indexOf(sortBy) + 1) % types.length];
+                setSortBy(next);
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#18181b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+            >
+              <ArrowUpDown size={12} color="#71717a" />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#71717a' }}>
+                {sortBy === 'value' ? '가치순' : sortBy === 'profit' ? '수익순' : sortBy === 'rate' ? '수익률순' : '이름순'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {processed.map(p => (
@@ -418,8 +430,13 @@ export default function DashboardScreen() {
                       {isLocalCurrency ? formatCurrency(h.valueLocal, h.currency) : formatCurrency(h.valueKRW)}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isPos ? '#22c55e' : '#3b82f6' }}>{formatRate(h.profitRate)}</Text>
-                      {isPos ? <TrendingUp size={10} color="#22c55e" /> : <TrendingDown size={10} color="#3b82f6" />}
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: (isTodayMode ? h.dayChangeKRW >= 0 : h.profitValueKRW >= 0) ? '#22c55e' : '#3b82f6' }}>
+                        {isTodayMode 
+                          ? `${h.dayChangeKRW >= 0 ? '+' : ''}${formatCurrency(h.dayChangeKRW)} (${formatRate(h.dayChangePercent)})`
+                          : `${h.profitValueKRW >= 0 ? '+' : ''}${formatCurrency(h.profitValueKRW)} (${formatRate(h.profitRate)})`
+                        }
+                      </Text>
+                      {(isTodayMode ? h.dayChangeKRW >= 0 : h.profitValueKRW >= 0) ? <TrendingUp size={10} color="#22c55e" /> : <TrendingDown size={10} color="#3b82f6" />}
                     </View>
                   </View>
                 </TouchableOpacity>
