@@ -22,20 +22,14 @@ export default function SettingsScreen() {
   }, [session, authLoading]);
 
   const handleSignOut = async () => {
-    // Admin bypass: simply redirect to login if no real session
-    if (!session && email === 'admin') {
-      router.replace('/(auth)/login');
-      return;
-    }
-
     Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
       { text: '취소', style: 'cancel' },
       {
         text: '로그아웃',
         style: 'destructive',
         onPress: async () => {
-          const { error } = await signOut();
-          if (!error) router.replace('/(auth)/login');
+          await signOut(); // Ignore error, force clear anyway
+          router.replace('/(auth)/login');
         },
       },
     ]);
