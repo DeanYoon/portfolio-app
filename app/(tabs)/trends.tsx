@@ -349,6 +349,39 @@ export default function TrendsScreen() {
   const [holdings, setHoldings] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
 
+  // ─── Allocation data (items only) ───
+  const allocationDataRaw = useMemo(() => {
+    const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
+    if (filtered.length === 0) return [];
+
+    const usdkrw = priceMap['USDKRW=X']?.price || 1400;
+    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
+
+    return filtered.map(h => {
+      const isCash = h.ticker.startsWith('CASH_');
+      const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
+      const priceInfo = priceMap[h.ticker];
+      const currentPrice = priceInfo?.price || h.avg_price;
+      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
+      const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
+      const effectiveRate = isCash ? 1 : rate;
+      const valueKRW = qty * currentPrice * effectiveRate;
+      return {
+        name: h.name || h.ticker,
+        fullName: priceInfo?.name || h.name || h.ticker,
+        ticker: h.ticker,
+        value: Math.round(valueKRW),
+        changeAmount: Math.round((priceInfo?.change_amount || 0) * qty * effectiveRate),
+        changePercent: isCash ? 0 : (priceInfo?.change_percent || 0),
+      };
+    }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
+  }, [holdings, priceMap, selectedPortfolioId]);
+
+  // Allocation total (derived from allocationDataRaw)
+  const allocationTotal = useMemo(() => {
+    return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
+  }, [allocationDataRaw]);
+
   const fetchData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
@@ -403,6 +436,7 @@ export default function TrendsScreen() {
     if (formatted.length > 0 && allocationTotal > 0) {
       formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocationTotal };
     }
+    return formatted;
   }, [rawSnapshots, selectedPortfolioId, allocationTotal]);
 
   const displayedSnapshots = useMemo(() => {
@@ -433,40 +467,6 @@ export default function TrendsScreen() {
   const periodChange = displayedLast - displayedFirst;
   const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
 
-  // ─── Allocation data (items only) ───
-  const allocationDataRaw = useMemo(() => {
-    const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
-    if (filtered.length === 0) return [];
-
-    const usdkrw = priceMap['USDKRW=X']?.price || 1400;
-    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-
-    return filtered.map(h => {
-      const isCash = h.ticker.startsWith('CASH_');
-      const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
-      const priceInfo = priceMap[h.ticker];
-      const currentPrice = priceInfo?.price || h.avg_price;
-      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
-      const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      const effectiveRate = isCash ? 1 : rate;
-      const valueKRW = qty * currentPrice * effectiveRate;
-      return {
-        name: h.name || h.ticker,
-        fullName: priceInfo?.name || h.name || h.ticker,
-        ticker: h.ticker,
-        value: Math.round(valueKRW),
-        changeAmount: Math.round((priceInfo?.change_amount || 0) * qty * effectiveRate),
-        changePercent: isCash ? 0 : (priceInfo?.change_percent || 0),
-      };
-    }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
-  }, [holdings, priceMap, selectedPortfolioId]);
-
-  // Allocation total (derived from allocationDataRaw)
-  const allocationTotal = useMemo(() => {
-    return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
-  }, [allocationDataRaw]);
-
-  // Allocation data with percentages (derived from allocationDataRaw + allocationTotal)
   const allocationData = useMemo(() => {
     return allocationDataRaw.map(a => ({
       ...a,
