@@ -39,32 +39,32 @@ const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
 const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceData>> => {
   const map: Record<string, PriceData> = {};
   const cashTickers: string[] = [];
-  const usTickers: string[] = [];
+  const yahooTickers: string[] = []; 
   const jpTickers: string[] = [];
-  const currencyTickers: string[] = [];
 
   tickers.forEach(tk => {
     if (tk.startsWith('CASH_')) cashTickers.push(tk);
     else if (isJapaneseFund(tk)) jpTickers.push(tk);
-    else if (tk.endsWith('=X')) currencyTickers.push(tk);
-    else usTickers.push(tk);
+    else yahooTickers.push(tk);
   });
 
-  if (usTickers.length > 0) {
+  // 1. Yahoo tickers integration (Stocks, VIX, FX)
+  if (yahooTickers.length > 0) {
     try {
-      const res = await fetch(`${VERCEL_API}/quote?symbols=${usTickers.join(',')}`);
+      const res = await fetch(`${VERCEL_API}/quote?symbols=${yahooTickers.join(',')}`);
       const json = await res.json();
       if (json) {
         for (const [tk, info] of Object.entries(json)) {
           const i = info as any;
-          if (i.price) {
+          if (i.price !== undefined) {
             map[tk] = { price: i.price, name: i.symbol || tk, change_amount: i.change || 0, change_percent: i.changePercent || 0, last_updated: new Date().toISOString() };
           }
         }
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('Yahoo fetch error:', e); }
   }
 
+  // 2. Japan Funds (Supabase Cache)
   if (jpTickers.length > 0) {
     try {
       const { data } = await supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers);
@@ -74,22 +74,10 @@ const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceDa
           if (pd) map[fund.fcode] = { price: pd.price, name: pd.name || fund.fcode, change_amount: pd.change_amount || 0, change_percent: pd.change_percent || 0, last_updated: pd.last_updated || new Date().toISOString() };
         }
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('JP Cache error:', e); }
   }
 
-  if (currencyTickers.length > 0) {
-    try {
-      const currRes = await fetch(`${VERCEL_API}/quote?symbols=${currencyTickers.join(',')}`);
-      const currJson = await currRes.json();
-      if (currJson) {
-        for (const [tk, val] of Object.entries(currJson)) {
-          const v = val as any;
-          map[tk] = { price: v.price || 0, change_amount: v.change || 0, change_percent: v.changePercent || 0 };
-        }
-      }
-    } catch (e) { console.error(e); }
-  }
-
+  // 3. Cash
   cashTickers.forEach(tk => {
     const cur = tk.split('_')[1];
     map[tk] = { price: cur === 'KRW' ? 1 : 0, change_amount: 0, change_percent: 0 };
@@ -117,7 +105,6 @@ export default function DashboardScreen() {
   const [isLocalCurrency, setIsLocalCurrency] = useState(false);
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
-  
   const isFetchingRef = useRef(false);
 
   const setSelectedId = async (id: string | undefined) => {
@@ -128,8 +115,7 @@ export default function DashboardScreen() {
   const loadDashboard = useCallback(async (forceRefresh = false) => {
     if (!session || isFetchingRef.current) return;
     isFetchingRef.current = true;
-    setDataLoading(true);
-    setLoading(true);
+    setDataLoading(true); setLoading(true);
     try {
       const pResPromise = supabase.from('portfolios').select('*, holdings(*)').eq('user_id', session.user.id);
       const cachedHoldings = await getHoldings(undefined, forceRefresh);
@@ -140,7 +126,6 @@ export default function DashboardScreen() {
       if (error || !pData) { setLoading(false); isFetchingRef.current = false; return; }
 
       const prices = await pricesPromise;
-      const actId = selectedId || String(pData[0]?.id);
       if (!selectedId && pData.length > 0) setSelectedIdLocal(String(pData[0].id));
 
       const updatedPData = pData.map(p => ({
@@ -152,9 +137,7 @@ export default function DashboardScreen() {
       setUsdKrw(prices['USDKRW=X']?.price || 1400);
       setJpyKrw(prices['JPYKRW=X']?.price || 9.5);
     } catch (e) { console.error(e); }
-    finally {
-      setLoading(false); setDataLoading(false); setRefreshing(false); isFetchingRef.current = false;
-    }
+    finally { setLoading(false); setDataLoading(false); setRefreshing(false); isFetchingRef.current = false; }
   }, [session, selectedId]);
 
   useFocusEffect(useCallback(() => {
@@ -182,27 +165,23 @@ export default function DashboardScreen() {
   const processedData = useMemo(() => {
     const actId = selectedId || String(portfolios[0]?.id);
     const activePortfolios = portfolios.filter(p => String(p.id) === actId);
-    let grandTotalKRW = 0, grandInitialKRW = 0, grandDayChangeKRW = 0;
-    let usProfitKRW = 0, usValueKRW = 0, jpProfitKRW = 0, jpValueKRW = 0, krProfitKRW = 0, krValueKRW = 0;
+    let gT = 0, gI = 0, gD = 0, uP = 0, uV = 0, jP = 0, jV = 0, kP = 0, kV = 0;
 
     const result = activePortfolios.map(p => {
-      let pTotal = 0, pInitial = 0, pDayChg = 0;
+      let pT = 0, pI = 0, pD = 0;
       const rows = p.holdings.map(h => {
-        const mi = priceMap[h.ticker];
-        const cp = mi?.price || h.avg_price;
+        const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
         const rate = h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1;
-        const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
+        const isJp = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker);
         const isCash = h.ticker.startsWith('CASH_');
-        const qty = isJpFund ? h.quantity / 10000 : h.quantity;
-        const valueLocal = qty * cp;
-        const initialLocal = qty * (isCash ? cp : h.avg_price);
-        const vK = valueLocal * rate; const iK = initialLocal * rate;
-        const dChgK = (mi?.change_amount || 0) * qty * rate;
-        pTotal += vK; pInitial += iK; pDayChg += dChgK;
-        if (h.currency === 'USD') { usValueKRW += vK; usProfitKRW += (vK - iK); }
-        else if (h.currency === 'JPY') { jpValueKRW += vK; jpProfitKRW += (vK - iK); }
-        else { krValueKRW += vK; krProfitKRW += (vK - iK); }
-        return { ...h, currentPrice: cp, valueKRW: vK, valueLocal, profitValueKRW: vK - iK, profitRate: isCash ? 0 : ((cp - h.avg_price) / h.avg_price) * 100, dayChangeKRW: dChgK, dayChangePercent: mi?.change_percent || 0, displayName: mi?.name || h.name || h.ticker, flag: getFlag(h.country) };
+        const qty = isJp ? h.quantity / 10000 : h.quantity;
+        const vL = qty * cp; const iL = qty * (isCash ? cp : h.avg_price);
+        const vK = vL * rate; const iK = iL * rate; const dK = (mi?.change_amount || 0) * qty * rate;
+        pT += vK; pI += iK; pD += dK;
+        if (h.currency === 'USD') { uV += vK; uP += (vK - iK); }
+        else if (h.currency === 'JPY') { jV += vK; jP += (vK - iK); }
+        else { kV += vK; kP += (vK - iK); }
+        return { ...h, currentPrice: cp, valueKRW: vK, valueLocal: vL, profitValueKRW: vK - iK, profitRate: isCash ? 0 : ((cp - h.avg_price) / h.avg_price) * 100, dayChangeKRW: dK, dayChangePercent: mi?.change_percent || 0, displayName: mi?.name || h.name || h.ticker, flag: getFlag(h.country) };
       });
       rows.sort((a, b) => {
         if (sortBy === 'value') return b.valueKRW - a.valueKRW;
@@ -210,103 +189,75 @@ export default function DashboardScreen() {
         if (sortBy === 'rate') return b.profitRate - a.profitRate;
         return a.displayName.localeCompare(b.displayName);
       });
-      grandTotalKRW += pTotal; grandInitialKRW += pInitial; grandDayChangeKRW += pDayChg;
-      return { ...p, rows, pTotal, pInitial, pDayChg };
+      gT += pT; gI += pI; gD += pD;
+      return { ...p, rows, pT, pI, pD };
     });
 
-    const tax = calculateTax(usProfitKRW, 'USD');
+    const tax = calculateTax(uP, 'USD');
     return {
       processed: result,
-      totals: { grandTotalKRW, grandInitialKRW, grandDayChangeKRW, grandProfitKRW: grandTotalKRW - grandInitialKRW, grandProfitRate: grandInitialKRW > 0 ? ((grandTotalKRW - grandInitialKRW) / grandInitialKRW) * 100 : 0, dayChgRate: (grandTotalKRW - grandDayChangeKRW) !== 0 ? (grandDayChangeKRW / (grandTotalKRW - grandDayChangeKRW)) * 100 : 0, vix: priceMap['^VIX']?.price },
-      exitSimulation: { totalValue: grandTotalKRW, tax, netAmount: grandTotalKRW - tax, breakdown: { usValueKRW, usProfitKRW, krValueKRW, krProfitKRW, jpValueKRW, jpProfitKRW } }
+      totals: { gT, gI, gD, gProfit: gT - gI, gRate: gI > 0 ? ((gT - gI) / gI) * 100 : 0, dRate: (gT - gD) !== 0 ? (gD / (gT - gD)) * 100 : 0, vix: priceMap['^VIX']?.price },
+      exitSimulation: { totalValue: gT, tax, netAmount: gT - tax, breakdown: { uV, uP, kV, kP, jV, jP } }
     };
   }, [portfolios, selectedId, priceMap, usdkrw, jpykrw, sortBy]);
 
-  if (authLoading) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
-  if (dataLoading && portfolios.length === 0) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  if (authLoading || (dataLoading && portfolios.length === 0)) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
 
   const { processed, totals, exitSimulation } = processedData;
-  const tp = totals.grandProfitKRW >= 0;
-  const dp = totals.grandDayChangeKRW >= 0;
+  const tp = totals.gProfit >= 0; const dp = totals.gD >= 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text>
-          <ChevronDown size={16} color="#71717a" />
+          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text><ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
-            <RefreshCw size={20} color="#e4e4e7" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
-            <Plus size={20} color="#052e16" />
-          </TouchableOpacity>
+          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}><RefreshCw size={20} color="#e4e4e7" /></TouchableOpacity>
+          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}><Plus size={20} color="#052e16" /></TouchableOpacity>
         </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />} contentContainerStyle={{ padding: 16, paddingTop: 8 }}>
         <View style={{ marginBottom: 20 }}>
           <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 10 }}>TOTAL ASSET</Text>
-          <Text style={{ fontSize: 32, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>
-            {isLocalCurrency ? formatCurrency(totals.grandTotalKRW / usdkrw, 'USD') : formatCurrency(totals.grandTotalKRW)}
-          </Text>
+          <Text style={{ fontSize: 32, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>{formatCurrency(totals.gT)}</Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
           <View style={{ flex: 1, backgroundColor: tp ? '#1a0a0a' : '#0a0a1a', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: tp ? '#7f1d1d' : '#1e3a5f' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              {tp ? <TrendingUp size={14} color="#ef4444" /> : <TrendingDown size={14} color="#3b82f6" />}
-              <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>총 손익</Text>
-            </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: tp ? '#ef4444' : '#3b82f6' }}>{tp ? '+' : ''}{formatCurrency(Math.abs(totals.grandProfitKRW))}</Text>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: tp ? '#ef4444' : '#3b82f6', marginTop: 2 }}>{formatRate(totals.grandProfitRate)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>{tp ? <TrendingUp size={14} color="#ef4444" /> : <TrendingDown size={14} color="#3b82f6" />}<Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>총 손익</Text></View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: tp ? '#ef4444' : '#3b82f6' }}>{tp ? '+' : ''}{formatCurrency(Math.abs(totals.gProfit))}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: tp ? '#ef4444' : '#3b82f6', marginTop: 2 }}>{formatRate(totals.gRate)}</Text>
           </View>
           <View style={{ flex: 1, backgroundColor: dp ? '#1a0a0a' : '#0a0a1a', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: dp ? '#7f1d1d' : '#1e3a5f' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              {dp ? <ArrowUpRight size={14} color="#ef4444" /> : <ArrowDownRight size={14} color="#3b82f6" />}
-              <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>오늘</Text>
-            </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: dp ? '#ef4444' : '#3b82f6' }}>{dp ? '+' : ''}{formatCurrency(Math.abs(totals.grandDayChangeKRW))}</Text>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: dp ? '#ef4444' : '#3b82f6', marginTop: 2 }}>{formatRate(totals.dayChgRate)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>{dp ? <ArrowUpRight size={14} color="#ef4444" /> : <ArrowDownRight size={14} color="#3b82f6" />}<Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>오늘</Text></View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: dp ? '#ef4444' : '#3b82f6' }}>{dp ? '+' : ''}{formatCurrency(Math.abs(totals.gD))}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: dp ? '#ef4444' : '#3b82f6', marginTop: 2 }}>{formatRate(totals.dRate)}</Text>
           </View>
         </View>
 
-        {/* ... Rest of UI remained same ... */}
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
           <View style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>USD/KRW</Text>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{usdkrw.toFixed(2)}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>USD/KRW</Text><Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{usdkrw.toFixed(2)}</Text>
           </View>
           {totals.vix && <View style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>VIX</Text>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: totals.vix > 25 ? '#22c55e' : totals.vix < 15 ? '#ef4444' : '#e4e4e7' }}>{totals.vix.toFixed(2)}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>VIX</Text><Text style={{ fontSize: 14, fontWeight: '800', color: totals.vix > 25 ? '#22c55e' : totals.vix < 15 ? '#ef4444' : '#e4e4e7' }}>{totals.vix.toFixed(2)}</Text>
           </View>}
         </View>
 
         <View style={{ backgroundColor: '#18181b', borderRadius: 16, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#27272a' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Wallet size={14} color="#71717a" />
-            <Text style={{ fontSize: 10, fontWeight: '900', color: '#71717a', letterSpacing: 1 }}>전량 매도 시 예상 금액</Text>
-          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}><Wallet size={14} color="#71717a" /><Text style={{ fontSize: 10, fontWeight: '900', color: '#71717a', letterSpacing: 1 }}>전량 매도 시 예상 금액</Text></View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <View>
-              <Text style={{ fontSize: 20, fontWeight: '900', color: '#22c55e' }}>{formatCurrency(exitSimulation.netAmount)}</Text>
-              <Text style={{ fontSize: 11, color: '#52525b', marginTop: 4 }}>세금: -{formatCurrency(exitSimulation.tax)} (미국 22%)</Text>
-            </View>
+            <View><Text style={{ fontSize: 20, fontWeight: '900', color: '#22c55e' }}>{formatCurrency(exitSimulation.netAmount)}</Text><Text style={{ fontSize: 11, color: '#52525b', marginTop: 4 }}>세금: -{formatCurrency(exitSimulation.tax)} (미국 22%)</Text></View>
           </View>
         </View>
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>HOLDINGS · 길게눌러 수정</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity onPress={() => setIsTodayMode(!isTodayMode)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isTodayMode ? '#1e3a5f' : '#18181b', borderWidth: 1, borderColor: isTodayMode ? '#3b82f6' : '#27272a' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: isTodayMode ? '#3b82f6' : '#71717a' }}>오늘 기준</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { const types: SortType[] = ['value', 'profit', 'rate', 'name']; const next = types[(types.indexOf(sortBy) + 1) % types.length]; setSortBy(next); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#18181b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-              <ArrowUpDown size={12} color="#71717a" /><Text style={{ fontSize: 11, fontWeight: '700', color: '#71717a' }}>{sortBy === 'value' ? '가치순' : sortBy === 'profit' ? '수익순' : sortBy === 'rate' ? '수익률순' : '이름순'}</Text>
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setIsTodayMode(!isTodayMode)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isTodayMode ? '#1e3a5f' : '#18181b', borderWidth: 1, borderColor: isTodayMode ? '#3b82f6' : '#27272a' }}><Text style={{ fontSize: 11, fontWeight: '700', color: isTodayMode ? '#3b82f6' : '#71717a' }}>오늘 기준</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => { const types: SortType[] = ['value', 'profit', 'rate', 'name']; const next = types[(types.indexOf(sortBy) + 1) % types.length]; setSortBy(next); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#18181b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}><ArrowUpDown size={12} color="#71717a" /><Text style={{ fontSize: 11, fontWeight: '700', color: '#71717a' }}>{sortBy === 'value' ? '가치순' : sortBy === 'profit' ? '수익순' : sortBy === 'rate' ? '수익률순' : '이름순'}</Text></TouchableOpacity>
           </View>
         </View>
 
@@ -318,7 +269,7 @@ export default function DashboardScreen() {
                   <Text style={{ fontSize: 20, marginRight: 10 }}>{h.flag}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontWeight: '700', color: '#e4e4e7' }} numberOfLines={1}>{h.displayName}</Text>
-                    <Text style={{ fontSize: 11, color: '#52525b' }}>{h.currency}<Text style={{ color: '#71717a' }}> · 현재가: {formatCurrency(h.currentPrice * (h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1), 'KRW')}</Text></Text>
+                    <Text style={{ fontSize: 11, color: '#52525b' }}>{h.currency}<Text style={{ color: '#71717a' }}> · 현재가: {formatCurrency(h.currentPrice * (h.currency==='USD'?usdkrw:(h.currency==='JPY'?jpykrw:1)), 'KRW')}</Text></Text>
                   </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
