@@ -364,7 +364,8 @@ export default function TrendsScreen() {
       const currentPrice = priceInfo?.price || h.avg_price;
       const qty = isJpFund ? h.quantity / 10000 : h.quantity;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      const effectiveRate = isCash ? 1 : rate;
+      // 대시보드와 동일하게 현금(CASH_USD/JPY)에도 환율 적용
+      const effectiveRate = rate;
       const valueKRW = qty * currentPrice * effectiveRate;
       return {
         name: h.name || h.ticker,
