@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -19,11 +20,14 @@ export default function LoginScreen() {
     }
 
     // Admin Bypass for Testing
-    if (email === 'admin' && password === '1234') {
-      // For testing, we sign in with a known public/demo account if available,
-      // or we can spoof the navigation for UI-only checks.
-      // But since we need Supabase data, we'll use a specific demo account email if you have one.
-      // If not, I'll just replace the route to let me see the UI.
+    if (email === 'admin' && password=*** '1234') {
+      // Flag for admin bypass logic in layout wrappers
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('adminBypass', 'true');
+      } else {
+        await AsyncStorage.setItem('adminBypass', 'true');
+      }
+      
       router.replace('/(tabs)');
       return;
     }

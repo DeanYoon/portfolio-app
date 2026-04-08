@@ -23,22 +23,52 @@ export default function SettingsScreen() {
   }, [session, authLoading]);
 
   const handleSignOut = async () => {
+    console.log('[handleSignOut] 로그아웃 버튼 터치됨');
+    
+    // 모바일/웹 공통 동작 확인을 위해 기본 window.confirm을 사용할 수도 있으나
+    // RN/Expo 환경에서는 Alert가 안전합니다.
     Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
+      { 
+        text: '취소', 
+        style: 'cancel',
+        onPress: () => console.log('[handleSignOut] 팝업에서 취소 터치')
+      },
       {
         text: '로그아웃',
         style: 'destructive',
         onPress: async () => {
-          await signOut(); // Clear Supabase session
-          // Clear LocalStorage manually for Web ensuring admin bypass tokens are completely wiped
-          if (typeof window !== 'undefined' && window.localStorage) {
-             window.localStorage.clear();
-          }
-          // Clear AsyncStorage for native mobile apps as well
-          try {
-            await AsyncStorage.clear();
-          } catch(e) { /* ignore */ }
+          console.log('[handleSignOut] 로그아웃 팝업 확인 버튼 눌림 - 진짜 시작');
           
+          try {
+            console.log('[handleSignOut] 1. session 확인 / UseAuth signOut 수행 시작');
+            await signOut(); 
+            console.log('[handleSignOut] 1. UseAuth signOut 끝');
+          } catch(e) {
+            console.error('[handleSignOut] 1. error', e);
+          }
+          
+          console.log('[handleSignOut] 2. 로컬 스토리지 삭제 시도 (Web)');
+          if (typeof window !== 'undefined' && window.localStorage) {
+             window.localStorage.removeItem('adminBypass');
+             window.localStorage.clear();
+             console.log('[handleSignOut] 2. window.localStorage.clear() 호출됨');
+             
+             // 웹 환경에서 페이지 강제로 새로고침해버리기 (브라우저 데이터 완전 갱신용)
+             if (window.location) {
+                console.log('[handleSignOut] 웹 환경: router 로직으로 이동');
+             }
+          }
+          
+          console.log('[handleSignOut] 3. AsyncStorage 삭제 시도 (Native)');
+          try {
+            await AsyncStorage.removeItem('adminBypass');
+            await AsyncStorage.clear();
+            console.log('[handleSignOut] AsyncStorage.clear() 호출됨');
+          } catch(e) { 
+            console.error('[handleSignOut] 3. error', e);
+          }
+          
+          console.log('[handleSignOut] 4. router.replace("/(auth)/login") 강제 이동');
           router.replace('/(auth)/login');
         },
       },
