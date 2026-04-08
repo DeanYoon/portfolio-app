@@ -12,10 +12,22 @@ export default function SettingsScreen() {
   const [email, setEmail] = useState('');
 
   useEffect(() => {
-    if (session?.user?.email) setEmail(session.user.email);
-  }, [session]);
+    if (session?.user?.email) {
+      setEmail(session.user.email);
+    } else if (!session && !authLoading) {
+      // Admin bypass identification
+      // In a real app, you might check a flag set during login bypass
+      setEmail('admin');
+    }
+  }, [session, authLoading]);
 
   const handleSignOut = async () => {
+    // Admin bypass: simply redirect to login if no real session
+    if (!session && email === 'admin') {
+      router.replace('/(auth)/login');
+      return;
+    }
+
     Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
       { text: '취소', style: 'cancel' },
       {
@@ -30,17 +42,8 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccount = async () => {
-    Alert.alert('⚠️ 계정 삭제', '정말 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          // TODO: 실제 계정 삭제 구현
-          Alert.alert('문의', '계정 삭제는 데스크톱 버전에서 지원됩니다.');
-        },
-      },
-    ]);
+    // Admin restriction or general disable as requested
+    Alert.alert('알림', '계정 삭제는 현재 보호된 기능입니다.');
   };
 
   return (
@@ -79,9 +82,9 @@ export default function SettingsScreen() {
           </View>
         </TouchableOpacity>
         <View style={{ height: 1, backgroundColor: '#27272a' }} />
-        <TouchableOpacity style={{ padding: 16 }} onPress={handleDeleteAccount}>
+        <TouchableOpacity style={{ padding: 16, opacity: 0.5 }} onPress={handleDeleteAccount} disabled={true}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: '#ef4444', flex: 1 }}>계정 삭제</Text>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#ef4444', flex: 1 }}>계정 삭제 (비활성화됨)</Text>
           </View>
         </TouchableOpacity>
       </View>
