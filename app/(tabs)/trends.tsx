@@ -321,78 +321,23 @@ export default function TrendsScreen() {
   const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<Snapshot[]>([]);
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | 'ALL'>('1M');
+  const isFetchingRef = useRef(false);
 
   // 터치 분석 상태
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [containerWidth, setContainerWidth] = useState(width - 32);
 
-  // Sync with shared state on mount and on app resume
-  useEffect(() => {
-    const syncState = async () => {
-      const saved = await getSelectedPortfolioId();
-      setSelectedPortfolioIdLocal(saved || 'ALL');
-    };
-    syncState();
-    
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') syncState();
-    });
-    return () => sub.remove();
-  }, []);
-
-  // Re-sync when tab gains focus
-  useFocusEffect(useCallback(() => {
-    getSelectedPortfolioId().then(saved => {
-      if (saved && saved !== selectedPortfolioId) setSelectedPortfolioIdLocal(saved);
-    });
-  }, [selectedPortfolioId]));
-
   const [holdings, setHoldings] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
 
-  // ─── Allocation data (items only) ───
-  const allocationDataRaw = useMemo(() => {
-    const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
-    if (filtered.length === 0) return [];
-
-    const usdkrw = priceMap['USDKRW=X']?.price || 1400;
-    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-
-    return filtered.map(h => {
-      const isCash = h.ticker.startsWith('CASH_');
-      const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
-      const priceInfo = priceMap[h.ticker];
-      const currentPrice = priceInfo?.price || h.avg_price;
-      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
-      const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      // 대시보드와 동일하게 현금(CASH_USD/JPY)에도 환율 적용
-      const effectiveRate = rate;
-      const valueKRW = qty * currentPrice * effectiveRate;
-      return {
-        name: h.name || h.ticker,
-        fullName: priceInfo?.name || h.name || h.ticker,
-        ticker: h.ticker,
-        value: Math.round(valueKRW),
-        changeAmount: Math.round((priceInfo?.change_amount || 0) * qty * effectiveRate),
-        changePercent: isCash ? 0 : (priceInfo?.change_percent || 0),
-      };
-    }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
-  }, [holdings, priceMap, selectedPortfolioId]);
-
-  // Allocation total (derived from allocationDataRaw)
-  const allocationTotal = useMemo(() => {
-    return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
-  }, [allocationDataRaw]);
-  
-  // ─── Data Fetching ───
-  const fetchData = useCallback(async () => {
-    if (!session) return;
-    
+  const loadTrends = useCallback(async (forceRefresh = false) => {
+    if (!session || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setDataLoading(true);
     setLoading(true);
     try {
       // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (로컬 스토리지라 매우 빠름)
-      const folderHoldings = await getHoldings();
+      const folderHoldings = await getHoldings(undefined, forceRefresh);
       
       // 2. 가장 오래 걸리는 가격 데이터(Yahoo Quote) 호출을 최우선 시작
       let priceMapPromise = Promise.resolve({});
@@ -409,6 +354,7 @@ export default function TrendsScreen() {
 
       if (!pRes.data || pRes.data.length === 0) {
         setLoading(false);
+        isFetchingRef.current = false;
         return;
       }
       
@@ -427,50 +373,73 @@ export default function TrendsScreen() {
           : Promise.resolve({ data: [] })
       ]);
 
-        const formattedPrices: Record<string, any> = {};
-        
-        if (priceRes) {
-          for (const [tk, info] of Object.entries(priceRes)) {
-            const i = info as any;
-            formattedPrices[tk] = {
-              price: i.price,
-              name: i.symbol || tk,
-              change_amount: i.change || 0,
-              change_percent: i.changePercent || 0
+      const formattedPrices: Record<string, any> = {};
+      
+      if (priceRes) {
+        for (const [tk, info] of Object.entries(priceRes)) {
+          const i = info as any;
+          formattedPrices[tk] = {
+            price: i.price,
+            name: i.symbol || tk,
+            change_amount: i.change || 0,
+            change_percent: i.changePercent || 0
+          };
+        }
+      }
+      
+      if (jpRes.data) {
+        for (const fund of jpRes.data) {
+          if (fund.price_data) {
+            formattedPrices[fund.fcode] = {
+              price: fund.price_data.price,
+              change_amount: fund.price_data.change_amount || 0,
+              change_percent: fund.price_data.change_percent || 0
             };
           }
         }
-        
-        if (jpRes.data) {
-          for (const fund of jpRes.data) {
-            if (fund.price_data) {
-              formattedPrices[fund.fcode] = {
-                price: fund.price_data.price,
-                change_amount: fund.price_data.change_amount || 0,
-                change_percent: fund.price_data.change_percent || 0
-              };
-            }
-          }
-        }
-        
-        // Cash handling
-        folderHoldings.filter(h => h.ticker.startsWith('CASH_')).forEach(h => {
-          const cur = h.ticker.split('_')[1];
-          formattedPrices[h.ticker] = { price: cur === 'KRW' ? 1 : 0 };
-        });
-
-        setPriceMap(formattedPrices);
       }
+      
+      // Cash handling
+      folderHoldings.filter(h => h.ticker.startsWith('CASH_')).forEach(h => {
+        const cur = h.ticker.split('_')[1];
+        formattedPrices[h.ticker] = { price: cur === 'KRW' ? 1 : 0 };
+      });
+
+      setPriceMap(formattedPrices);
     } catch (e) {
       console.error('Error fetching trends data:', e);
+    } finally {
+      setLoading(false);
+      setDataLoading(false);
+      isFetchingRef.current = false;
     }
-    setLoading(false);
-    setDataLoading(false);
   }, [session]);
 
+  // Sync with shared state on mount and on app resume
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const syncState = async () => {
+      const saved = await getSelectedPortfolioId();
+      setSelectedPortfolioIdLocal(saved || 'ALL');
+    };
+    syncState();
+    
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        syncState();
+        loadTrends();
+      }
+    });
+    return () => sub.remove();
+  }, [loadTrends]);
+
+  // Re-sync when tab gains focus
+  useFocusEffect(useCallback(() => {
+    getSelectedPortfolioId().then(saved => {
+      if (saved && saved !== selectedPortfolioId) setSelectedPortfolioIdLocal(saved);
+      loadTrends();
+    });
+  }, [selectedPortfolioId, loadTrends]));
+
 
   const allHistory = useMemo(() => {
     let filtered = rawSnapshots;

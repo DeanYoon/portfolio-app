@@ -47,11 +47,17 @@ export default function DividendsScreen() {
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
+  const isFetchingRef = useRef(false);
+
   useEffect(() => {
     if (!session) return;
     (async () => {
       const { data } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
-      if (data?.length) { setPortfolios(data); setSelectedPortfolioId(data[0].id); }
+      if (data?.length) { 
+        setPortfolios(data); 
+        const saved = await getSelectedPortfolioId();
+        setSelectedPortfolioIdLocal(saved || data[0].id); 
+      }
     })();
   }, [session]);
 
@@ -77,25 +83,31 @@ export default function DividendsScreen() {
   };
 
   // ── Fetch dividends ──
-  const fetchDividends = useCallback(async (pid: string) => {
-    if (!pid) return;
+  const fetchDividends = useCallback(async (pid: string, forceRefresh = false) => {
+    if (!pid || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setDataLoading(true);
     setLoading(true);
     setError(null);
     try {
-      // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (비동기지만 로컬이라 매우 빠름)
-      const holdings = await getHoldings(pid);
-      if (holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
-      
+      // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (Holdings는 캐시 활용)
+      const holdings = await getHoldings(pid, forceRefresh);
+      if (holdings.length === 0) { 
+        setStockDividends([]); 
+        setLoading(false); 
+        setDataLoading(false);
+        isFetchingRef.current = false;
+        return; 
+      }
+
       const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
-
-      // 2. 가장 오래 걸리는 배당 데이터 API 호출 (최우선 시작 & 캐시 활용)
-      const dividendsPromise = getDividends(rawTickers, VERCEL_API);
-
-      // 3. 나머지 데이터(Japan Funds, Rates, Quotes)를 병렬로 호출
       const jpFundDataPromise = supabase.from('japan_funds').select('*');
       const ratesResPromise = fetch(`${VERCEL_API}/quote?symbols=USDKRW=X,JPYKRW=X`).then(r => r.json());
 
+      // 2. 가장 오래 걸리는 배당 데이터 API 호출 (최우선 시작 & 캐시 활용)
+      const dividendsPromise = getDividends(rawTickers, VERCEL_API, forceRefresh);
+
+      // 3. 나머지 가격 데이터 요청 준비
       const rawToApi: Record<string, string> = {};
       const apiTickerSet = new Set<string>();
       for (const t of rawTickers) {
@@ -111,7 +123,6 @@ export default function DividendsScreen() {
         ? fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`).then(r => r.json())
         : Promise.resolve({});
 
-      // 모든 병렬 요청 대기 (여기서 배당 API가 처리되는 동안 다른 작업도 함께 진행됨)
       const [bulkDivData, jpRes, ratesRes, priceRes] = await Promise.all([
         dividendsPromise,
         jpFundDataPromise,
@@ -203,6 +214,7 @@ export default function DividendsScreen() {
     } finally {
       setLoading(false);
       setDataLoading(false);
+      isFetchingRef.current = false;
     }
   }, []);
 
