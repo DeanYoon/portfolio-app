@@ -19,6 +19,7 @@ export default function SettingsScreen() {
   }, [session]);
 
   const handleSignOut = async () => {
+    console.log('로그아웃 버튼 눌림');
     const performSignOut = async () => {
       try {
         await signOut();
