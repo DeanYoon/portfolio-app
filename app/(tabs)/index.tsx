@@ -185,12 +185,12 @@ export default function DashboardScreen() {
   const [editHolding, setEditHolding] = useState<any>(null);
 
   const loadDashboard = useCallback(async () => {
-    const userId = session?.user?.id || 'e8e0beae-1613-4ef0-bd5b-4ccda8333342';
+    if (!session) return;
     setDataLoading(true);
     setLoading(true);
     try {
       const { data: pData, error } = await supabase
-        .from('portfolios').select('*, holdings(*)').eq('user_id', userId);
+        .from('portfolios').select('*, holdings(*)').eq('user_id', session.user.id);
       if (error || !pData) { console.error(error); setLoading(false); return; }
       setPortfolios(pData as Portfolio[]);
 
@@ -313,12 +313,9 @@ export default function DashboardScreen() {
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          {/* Admin restriction: Hide Add button for admin user */}
-          {session?.user?.id && (
-            <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
-              <Plus size={20} color="#052e16" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
+            <Plus size={20} color="#052e16" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -399,8 +396,9 @@ export default function DashboardScreen() {
             {p.rows.map((h: any) => {
               const isPos = h.profitValueKRW >= 0;
               return (
-                <View
+                <TouchableOpacity
                   key={h.id}
+                  onPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -422,7 +420,7 @@ export default function DashboardScreen() {
                       {isPos ? <TrendingUp size={10} color="#22c55e" /> : <TrendingDown size={10} color="#3b82f6" />}
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>

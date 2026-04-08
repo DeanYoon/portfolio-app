@@ -379,20 +379,18 @@ export default function TrendsScreen() {
   }, [holdings, priceMap, selectedPortfolioId]);
 
   // Allocation total (derived from allocationDataRaw)
-  // Allocation total (derived from allocationDataRaw)
   const allocationTotal = useMemo(() => {
     return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
   }, [allocationDataRaw]);
   
   // ─── Data Fetching ───
   const fetchData = useCallback(async () => {
-    // Admin bypass logic
-    const userId = session?.user?.id || 'e8e0beae-1613-4ef0-bd5b-4ccda8333342';
+    if (!session) return;
     
     setDataLoading(true);
     setLoading(true);
     try {
-      const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', userId);
+      const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
 
       if (!pData || pData.length === 0) {
         setLoading(false);

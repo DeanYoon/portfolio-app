@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -16,19 +15,6 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('오류', '이메일과 비밀번호를 입력해주세요.');
-      return;
-    }
-
-    // Admin Bypass for Testing
-    if (email === 'admin' && password=*** '1234') {
-      // Flag for admin bypass logic in layout wrappers
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('adminBypass', 'true');
-      } else {
-        await AsyncStorage.setItem('adminBypass', 'true');
-      }
-      
-      router.replace('/(tabs)');
       return;
     }
 
