@@ -391,11 +391,20 @@ export default function TrendsScreen() {
     setDataLoading(true);
     setLoading(true);
     try {
-      // 1. Portfolios, Snapshots, Holdings를 병렬로 호출 (Holdings는 캐시 활용)
-      const [pRes, sRes, folderHoldings] = await Promise.all([
+      // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (로컬 스토리지라 매우 빠름)
+      const folderHoldings = await getHoldings();
+      
+      // 2. 가장 오래 걸리는 가격 데이터(Yahoo Quote) 호출을 최우선 시작
+      let priceMapPromise = Promise.resolve({});
+      if (folderHoldings.length > 0) {
+        const tickers = Array.from(new Set([...folderHoldings.map(h => h.ticker), 'USDKRW=X', 'JPYKRW=X']));
+        priceMapPromise = fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${tickers.join(',')}`).then(r => r.json());
+      }
+
+      // 3. 포트폴리오 및 스냅샷 데이터를 병렬로 호출
+      const [pRes, sRes] = await Promise.all([
         supabase.from('portfolios').select('id, name').eq('user_id', session.user.id),
-        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }),
-        getHoldings()
+        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true })
       ]);
 
       if (!pRes.data || pRes.data.length === 0) {
@@ -409,18 +418,14 @@ export default function TrendsScreen() {
       setRawSnapshots(folderSnapshots);
       setHoldings(folderHoldings);
 
-      // 2. 가격 데이터 가져오기
-      if (folderHoldings.length > 0) {
-        const tickers = Array.from(new Set([...folderHoldings.map(h => h.ticker), 'USDKRW=X', 'JPYKRW=X']));
-        const jpTickers = folderHoldings.filter(h => h.country === 'JP').map(h => h.ticker);
-        
-        // Yahoo API와 Supabase Japan Fund 캐시를 병렬로 호출
-        const [priceRes, jpRes] = await Promise.all([
-          fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${tickers.join(',')}`).then(r => r.json()),
-          jpTickers.length > 0 
-            ? supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers)
-            : Promise.resolve({ data: [] })
-        ]);
+      // 4. 가격 데이터 최종 합치기 (Yahoo API와 Supabase Japan Fund 캐시 병렬 처리)
+      const jpTickers = folderHoldings.filter(h => h.country === 'JP').map(h => h.ticker);
+      const [priceRes, jpRes] = await Promise.all([
+        priceMapPromise,
+        jpTickers.length > 0 
+          ? supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers)
+          : Promise.resolve({ data: [] })
+      ]);
 
         const formattedPrices: Record<string, any> = {};
         
