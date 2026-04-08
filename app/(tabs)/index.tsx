@@ -176,12 +176,30 @@ export default function DashboardScreen() {
         const isCash = h.ticker.startsWith('CASH_');
         const qty = isJp ? h.quantity / 10000 : h.quantity;
         const vL = qty * cp; const iL = qty * (isCash ? cp : h.avg_price);
-        const vK = vL * rate; const iK = iL * rate; const dK = (mi?.change_amount || 0) * qty * rate;
+        const vK = vL * rate; const iK = iL * rate; 
+        const dK = (mi?.change_amount || 0) * qty * rate;
+        
+        // 오늘 수익률 계산 보정: (오늘 변동액) / (어제 종가 기준 총 자산)
+        const dayChangePct = (mi?.price && mi?.change_amount) 
+          ? (mi.change_amount / (mi.price - mi.change_amount)) * 100 
+          : 0;
+
         pT += vK; pI += iK; pD += dK;
         if (h.currency === 'USD') { uV += vK; uP += (vK - iK); }
         else if (h.currency === 'JPY') { jV += vK; jP += (vK - iK); }
         else { kV += vK; kP += (vK - iK); }
-        return { ...h, currentPrice: cp, valueKRW: vK, valueLocal: vL, profitValueKRW: vK - iK, profitRate: isCash ? 0 : ((cp - h.avg_price) / h.avg_price) * 100, dayChangeKRW: dK, dayChangePercent: mi?.change_percent || 0, displayName: mi?.name || h.name || h.ticker, flag: getFlag(h.country) };
+        return { 
+          ...h, 
+          currentPrice: cp, 
+          valueKRW: vK, 
+          valueLocal: vL, 
+          profitValueKRW: vK - iK, 
+          profitRate: isCash ? 0 : ((cp - h.avg_price) / h.avg_price) * 100, 
+          dayChangeKRW: dK, 
+          dayChangePercent: isCash ? 0 : dayChangePct, 
+          displayName: mi?.name || h.name || h.ticker, 
+          flag: getFlag(h.country) 
+        };
       });
       rows.sort((a, b) => {
         if (sortBy === 'value') return b.valueKRW - a.valueKRW;
