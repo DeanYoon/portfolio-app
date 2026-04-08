@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { session, signOut } = useAuth();
+  const { session, signOut, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
 
   useEffect(() => {
