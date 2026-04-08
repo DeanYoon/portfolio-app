@@ -5,6 +5,7 @@ import { supabase } from '@/src/lib/supabase';
 import { LogOut, User, Shield, Bell, Moon } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -28,7 +29,16 @@ export default function SettingsScreen() {
         text: '로그아웃',
         style: 'destructive',
         onPress: async () => {
-          await signOut(); // Ignore error, force clear anyway
+          await signOut(); // Clear Supabase session
+          // Clear LocalStorage manually for Web ensuring admin bypass tokens are completely wiped
+          if (typeof window !== 'undefined' && window.localStorage) {
+             window.localStorage.clear();
+          }
+          // Clear AsyncStorage for native mobile apps as well
+          try {
+            await AsyncStorage.clear();
+          } catch(e) { /* ignore */ }
+          
           router.replace('/(auth)/login');
         },
       },
