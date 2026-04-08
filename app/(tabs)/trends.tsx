@@ -408,7 +408,44 @@ export default function TrendsScreen() {
         try {
           const res = await fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${symbols}`);
           const json = await res.json();
-          setPriceMap(json || {});
+          // Convert API format to match Dashboard (price key)
+          const formattedPrices: Record<string, any> = {};
+          if (json) {
+            for (const [tk, info] of Object.entries(json)) {
+              const i = info as any;
+              formattedPrices[tk] = {
+                price: i.price,
+                name: i.symbol || tk,
+                change_amount: i.change || 0,
+                change_percent: i.changePercent || 0
+              };
+            }
+          }
+          
+          // Japanese funds from cache (mirrors dashboard)
+          const jpTickers = hData.filter(h => h.country === 'JP').map(h => h.ticker);
+          if (jpTickers.length > 0) {
+            const { data: jpData } = await supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers);
+            if (jpData) {
+              for (const fund of jpData) {
+                if (fund.price_data) {
+                  formattedPrices[fund.fcode] = {
+                    price: fund.price_data.price,
+                    change_amount: fund.price_data.change_amount || 0,
+                    change_percent: fund.price_data.change_percent || 0
+                  };
+                }
+              }
+            }
+          }
+          
+          // Cash handling
+          hData.filter(h => h.ticker.startsWith('CASH_')).forEach(h => {
+            const cur = h.ticker.split('_')[1];
+            formattedPrices[h.ticker] = { price: cur === 'KRW' ? 1 : 0 };
+          });
+
+          setPriceMap(formattedPrices);
         } catch (e) {
           console.error('Failed to fetch prices:', e);
         }
@@ -428,10 +465,13 @@ export default function TrendsScreen() {
     let filtered = rawSnapshots;
     if (selectedPortfolioId !== 'ALL') filtered = rawSnapshots.filter(s => s.portfolio_id === selectedPortfolioId);
     const grouped = filtered.reduce((acc: Record<string, number>, curr) => {
-      // UTC 기준 snapshot_date를 현지 날짜(YYYY-MM-DD)로 변환
-      // DB의 2026-04-08T00:00:00Z는 현지 시간으로 "전날 밤"의 마감 데이터임
+      // 3. 타임라인 보정: 00:00:00 데이터는 전날 밤 종가로 간주하여 반영
       const d = new Date(curr.snapshot_date);
-      d.setMinutes(d.getMinutes() - 1); // 자정(00:00) 데이터를 전날 날짜로 편입시키기 위해 1분 차감
+      // DB의 T00:00:00Z 데이터는 실제로는 해당 날짜가 시작되는 자정 시점의 기록임.
+      // 이를 차트상에서 "전날의 결과"로 보여주기 위해 1분 차감하여 전날 날짜로 변환.
+      if (curr.snapshot_date.includes('T00:00:00')) {
+        d.setMinutes(d.setMinutes(0) - 1);
+      }
       const date = d.toISOString().split('T')[0];
       acc[date] = (acc[date] || 0) + Number(curr.total_value_krw);
       return acc;
