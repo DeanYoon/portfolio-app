@@ -19,17 +19,23 @@ export default function SettingsScreen() {
   }, [session]);
 
   const handleSignOut = async () => {
-    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
+    const performSignOut = async () => {
+      try {
+        await signOut();
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.clear();
+        }
+        await AsyncStorage.clear();
+        router.replace('/(auth)/login');
+      } catch (error) {
+        console.error('Logout error:', error);
+        Alert.alert('오류', '로그아웃 중 문제가 발생했습니다.');
+      }
+    };
+
+    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까? 모든 로컬 데이터가 삭제됩니다.', [
       { text: '취소', style: 'cancel' },
-      {
-        text: '로그아웃',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut(); // Clear Supabase session
-          await AsyncStorage.clear(); // Clear all local storage data
-          router.replace('/(auth)/login');
-        },
-      },
+      { text: '로그아웃', style: 'destructive', onPress: performSignOut },
     ]);
   };
 
