@@ -398,7 +398,9 @@ export default function DashboardScreen() {
               return (
                 <TouchableOpacity
                   key={h.id}
-                  onPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
+                  onPress={() => { router.push(`/stock/${h.ticker}`); }}
+                  onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
+                  delayLongPress={500}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
