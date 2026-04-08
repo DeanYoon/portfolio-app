@@ -382,14 +382,19 @@ export default function TrendsScreen() {
   const allocationTotal = useMemo(() => {
     return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
   }, [allocationDataRaw]);
-
+  // ─── Data Fetching ───
   const fetchData = useCallback(async () => {
-    if (!session) return;
+    // Admin bypass: allow fetching data even if no session (for UI testing)
+    const userId = session?.user?.id;
+    if (!userId && email !== 'admin') return; 
+
     setDataLoading(true);
     setLoading(true);
     try {
-      const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
-      setPortfolios(pData || []);
+      // If admin, we fetch a default set of portfolios or simply use a test ID
+      const query = supabase.from('portfolios').select('id, name');
+      const { data: pData } = userId ? await query.eq('user_id', userId) : await query.limit(1);
+
       if (!pData || pData.length === 0) {
         setLoading(false);
         return;

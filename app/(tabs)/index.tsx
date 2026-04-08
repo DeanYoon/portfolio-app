@@ -307,14 +307,17 @@ export default function DashboardScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       {/* 헤더 */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
+            <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
-            <Plus size={20} color="#052e16" />
-          </TouchableOpacity>
+          {/* Admin restriction: Hide Add button for admin user */}
+          {session?.user?.id && (
+            <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}>
+              <Plus size={20} color="#052e16" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -395,10 +398,8 @@ export default function DashboardScreen() {
             {p.rows.map((h: any) => {
               const isPos = h.profitValueKRW >= 0;
               return (
-                <TouchableOpacity
+                <View
                   key={h.id}
-                  onPress={() => router.push(`/stock/${encodeURIComponent(h.ticker)}`)}
-                  onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -420,7 +421,7 @@ export default function DashboardScreen() {
                       {isPos ? <TrendingUp size={10} color="#22c55e" /> : <TrendingDown size={10} color="#3b82f6" />}
                     </View>
                   </View>
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>
