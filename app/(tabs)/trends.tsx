@@ -390,67 +390,72 @@ export default function TrendsScreen() {
     setDataLoading(true);
     setLoading(true);
     try {
-      const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
+      // 1. Portfolios, Snapshots, Holdings를 병렬로 호출
+      const [pRes, sRes, hRes] = await Promise.all([
+        supabase.from('portfolios').select('id, name').eq('user_id', session.user.id),
+        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }),
+        supabase.from('holdings').select('id, ticker, name, avg_price, quantity, currency, country, portfolio_id')
+      ]);
 
-      if (!pData || pData.length === 0) {
+      if (!pRes.data || pRes.data.length === 0) {
         setLoading(false);
         return;
       }
-      const pIds = pData.map(p => p.id);
-      const { data: snapshotData, error } = await supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').in('portfolio_id', pIds).order('snapshot_date', { ascending: true });
-      if (error) throw error;
-      setRawSnapshots(snapshotData || []);
-      // Fetch holdings for allocation
-      const { data: hData } = await supabase.from('holdings').select('id, ticker, name, avg_price, quantity, currency, country, portfolio_id').in('portfolio_id', pIds);
-      setHoldings(hData || []);
-      // Fetch prices
-      if (hData && hData.length > 0) {
-        const tickers = Array.from(new Set([...hData.map(h => h.ticker), 'USDKRW=X', 'JPYKRW=X']));
-        const symbols = tickers.join(',');
-        try {
-          const res = await fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${symbols}`);
-          const json = await res.json();
-          // Convert API format to match Dashboard (price key)
-          const formattedPrices: Record<string, any> = {};
-          if (json) {
-            for (const [tk, info] of Object.entries(json)) {
-              const i = info as any;
-              formattedPrices[tk] = {
-                price: i.price,
-                name: i.symbol || tk,
-                change_amount: i.change || 0,
-                change_percent: i.changePercent || 0
+      
+      const pIds = pRes.data.map(p => p.id);
+      // 필터링은 클라이언트 사이드에서 수행하여 병렬성 극대화 (이미 전체를 가져옴)
+      const folderSnapshots = sRes.data?.filter(s => pIds.includes(s.portfolio_id)) || [];
+      const folderHoldings = hRes.data?.filter(h => pIds.includes(h.portfolio_id)) || [];
+
+      setRawSnapshots(folderSnapshots);
+      setHoldings(folderHoldings);
+
+      // 2. 가격 데이터 가져오기
+      if (folderHoldings.length > 0) {
+        const tickers = Array.from(new Set([...folderHoldings.map(h => h.ticker), 'USDKRW=X', 'JPYKRW=X']));
+        const jpTickers = folderHoldings.filter(h => h.country === 'JP').map(h => h.ticker);
+        
+        // Yahoo API와 Supabase Japan Fund 캐시를 병렬로 호출
+        const [priceRes, jpRes] = await Promise.all([
+          fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${tickers.join(',')}`).then(r => r.json()),
+          jpTickers.length > 0 
+            ? supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers)
+            : Promise.resolve({ data: [] })
+        ]);
+
+        const formattedPrices: Record<string, any> = {};
+        
+        if (priceRes) {
+          for (const [tk, info] of Object.entries(priceRes)) {
+            const i = info as any;
+            formattedPrices[tk] = {
+              price: i.price,
+              name: i.symbol || tk,
+              change_amount: i.change || 0,
+              change_percent: i.changePercent || 0
+            };
+          }
+        }
+        
+        if (jpRes.data) {
+          for (const fund of jpRes.data) {
+            if (fund.price_data) {
+              formattedPrices[fund.fcode] = {
+                price: fund.price_data.price,
+                change_amount: fund.price_data.change_amount || 0,
+                change_percent: fund.price_data.change_percent || 0
               };
             }
           }
-          
-          // Japanese funds from cache (mirrors dashboard)
-          const jpTickers = hData.filter(h => h.country === 'JP').map(h => h.ticker);
-          if (jpTickers.length > 0) {
-            const { data: jpData } = await supabase.from('japan_funds').select('fcode, price_data').in('fcode', jpTickers);
-            if (jpData) {
-              for (const fund of jpData) {
-                if (fund.price_data) {
-                  formattedPrices[fund.fcode] = {
-                    price: fund.price_data.price,
-                    change_amount: fund.price_data.change_amount || 0,
-                    change_percent: fund.price_data.change_percent || 0
-                  };
-                }
-              }
-            }
-          }
-          
-          // Cash handling
-          hData.filter(h => h.ticker.startsWith('CASH_')).forEach(h => {
-            const cur = h.ticker.split('_')[1];
-            formattedPrices[h.ticker] = { price: cur === 'KRW' ? 1 : 0 };
-          });
-
-          setPriceMap(formattedPrices);
-        } catch (e) {
-          console.error('Failed to fetch prices:', e);
         }
+        
+        // Cash handling
+        folderHoldings.filter(h => h.ticker.startsWith('CASH_')).forEach(h => {
+          const cur = h.ticker.split('_')[1];
+          formattedPrices[h.ticker] = { price: cur === 'KRW' ? 1 : 0 };
+        });
+
+        setPriceMap(formattedPrices);
       }
     } catch (e) {
       console.error('Error fetching trends data:', e);

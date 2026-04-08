@@ -81,90 +81,61 @@ export default function DividendsScreen() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Holdings 조회
-      const { data: holdings, error: hErr } = await supabase
-        .from('holdings')
-        .select('ticker, name, quantity, currency, country, portfolio_id')
-        .eq('portfolio_id', pid);
-      if (hErr) throw new Error(hErr.message);
-      if (!holdings || holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
+      // 1. Holdings, Japan Funds(캐시 전체), Exchange Rates를 병렬로 호출
+      const [hRes, jpRes, ratesRes] = await Promise.all([
+        supabase.from('holdings').select('ticker, name, quantity, currency, country, portfolio_id').eq('portfolio_id', pid),
+        supabase.from('japan_funds').select('*'),
+        fetch(`${VERCEL_API}/quote?symbols=USDKRW=X,JPYKRW=X`).then(r => r.json())
+      ]);
+
+      if (hRes.error) throw new Error(hRes.error.message);
+      const holdings = hRes.data || [];
+      if (holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
 
       const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
-
-      // 2. 일본 펀드 캐시 로드
-      const jpTickers = rawTickers.filter(t => {
-        const h = holdings.find((hh: any) => hh.ticker === t);
-        return h?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(t) || t === '9I312249');
-      });
-      let jpFundData: any[] = [];
-      if (jpTickers.length > 0) {
-        const { data } = await supabase.from('japan_funds').select('*').in('fcode', jpTickers);
-        jpFundData = data || [];
+      const jpFundData = jpRes.data || [];
+      
+      // 환율 설정
+      if (ratesRes) {
+        setExchangeRates({
+          usdkrw: ratesRes['USDKRW=X']?.price || 1400,
+          jpykrw: ratesRes['JPYKRW=X']?.price || 9.5,
+        });
       }
 
-      // 3. 가격 + 환율 로드 (raw ticker → API ticker 매핑)
+      // 2. 가격 및 배당 데이터를 병렬로 호출
       const rawToApi: Record<string, string> = {};
       const apiTickerSet = new Set<string>();
-      for (const rawTicker of rawTickers) {
-        const h = holdings.find((hh: any) => hh.ticker === rawTicker);
-        if (h?.currency === 'JPY') continue; // JP 펀드는 제외 (아래에서 캐시로 처리)
-        let apiTicker = rawTicker;
+      for (const t of rawTickers) {
+        const h = holdings.find((hh: any) => hh.ticker === t);
+        if (h?.currency === 'JPY') continue;
+        let apiTicker = t;
         if (/^[0-9]{6}$/.test(apiTicker)) apiTicker = `${apiTicker}.KS`;
         else if (/^[0-9]{4}$/.test(apiTicker)) apiTicker = `${apiTicker}.T`;
-        rawToApi[rawTicker] = apiTicker;
+        rawToApi[t] = apiTicker;
         apiTickerSet.add(apiTicker);
       }
-      apiTickerSet.add('USDKRW=X');
-      apiTickerSet.add('JPYKRW=X');
 
+      const [priceRes, bulkDivData] = await Promise.all([
+        apiTickerSet.size > 0 
+          ? fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`).then(r => r.json())
+          : Promise.resolve({}),
+        fetch(`${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`).then(r => r.json())
+      ]);
+
+      // 가격 맵 구성
       const priceMap: Record<string, number> = {};
-      try {
-        const url = `${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`;
-        console.log('[dividends] Price URL:', url);
-        const res = await fetch(url);
-        console.log('[dividends] Price Status:', res.status, res.statusText);
-        if (res.ok) {
-          const text = await res.text();
-          console.log('[dividends] Response (first 300):', text.substring(0, 300));
-          let apiRes: any;
-          try { apiRes = JSON.parse(text); } catch {
-            console.error('[dividends] JSON parse failed. Response:', text.substring(0, 200));
-          }
-          if (apiRes) {
-            for (const [rawTicker, apiTicker] of Object.entries(rawToApi)) {
-              const v = apiRes?.[apiTicker];
-              console.log('[dividends] Price', apiTicker, '→', v?.price, 'mapped to', rawTicker);
-              if (v?.price) priceMap[rawTicker] = v.price;
-            }
-            setExchangeRates({
-              usdkrw: apiRes['USDKRW=X']?.price || 1400,
-              jpykrw: apiRes['JPYKRW=X']?.price || 9.5,
-            });
-          }
+      if (priceRes) {
+        for (const [rawTicker, apiTicker] of Object.entries(rawToApi)) {
+          if (priceRes[apiTicker]?.price) priceMap[rawTicker] = priceRes[apiTicker].price;
         }
-      } catch (e) { console.error('Price fetch error:', e); }
-
-      // 일본 펀드 현재가 → Supabase 캐시에서
+      }
       for (const fund of jpFundData) {
-        if (fund.price_data?.price) {
-          priceMap[fund.fcode] = fund.price_data.price;
-        }
+        if (fund.price_data?.price) priceMap[fund.fcode] = fund.price_data.price;
       }
       setStockPrices(priceMap);
 
-      // Fetch dividends for ALL tickers in ONE bulk API call
-      const divUrl = `${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`;
-      let bulkDivData: Record<string, any> = {};
-      try {
-        const divRes = await fetch(divUrl);
-        if (divRes.ok) {
-          bulkDivData = await divRes.json();
-        }
-      } catch (e) {
-        console.error('Bulk dividend fetch error:', e);
-      }
-      
-      // Cutoff: 최근 2년
+      // 3. 배당 데이터 프로세싱
       const cutoffDate = new Date();
       cutoffDate.setFullYear(cutoffDate.getFullYear() - 2);
       const cutoffStr = cutoffDate.toISOString().split('T')[0];
@@ -173,10 +144,9 @@ export default function DividendsScreen() {
         list
           .filter((d: any) => d.date >= cutoffStr && d.date && d.amount != null && d.amount > 0)
           .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
-          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      // Process each ticker from bulk response
-      const dividendPromises = rawTickers.map(async (rawTicker: string) => {
+      const final = rawTickers.map((rawTicker: string) => {
         const holding = holdings.find((h: any) => h.ticker === rawTicker);
         const isJpFund = holding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
         const quantity = holding?.quantity || 0;
@@ -187,17 +157,16 @@ export default function DividendsScreen() {
 
         if (isJpFund) {
           const fund = jpFundData.find((f: any) => f.fcode === rawTicker);
-          if (fund?.dividend_data && Array.isArray(fund.dividend_data) && fund.dividend_data.length > 0) {
+          if (fund?.dividend_data?.length) {
             dividends = fund.dividend_data
               .map((d: any) => ({ date: d.date, amount: d.amount, close: d.close ?? 0 }))
-              .filter((d: any) => d.date >= cutoffStr && d.date && d.amount != null && d.amount > 0);
+              .filter((d: any) => d.date >= cutoffStr && d.date && d.amount > 0);
           }
           fetchedCurrency = 'JPY';
         } else {
           const tData = bulkDivData[rawTicker];
-          if (Array.isArray(tData) && tData.length > 0) {
-            dividends = processDivList(tData);
-          } else if (tData && typeof tData === 'object' && Array.isArray(tData.dividends)) {
+          if (Array.isArray(tData)) dividends = processDivList(tData);
+          else if (tData?.dividends) {
             dividends = processDivList(tData.dividends);
             if (tData.currency) fetchedCurrency = tData.currency;
           }
@@ -210,24 +179,16 @@ export default function DividendsScreen() {
           name: holding?.name || rawTicker,
           quantity: effectiveQty,
           dividends: dividends.map((d: any) => ({
-            date: d.date,
-            amount: d.amount,
-            close: d.close ?? 0,
-            totalForHolding: d.amount * effectiveQty,
-            currency: fetchedCurrency,
-            ticker: rawTicker,
+            date: d.date, amount: d.amount, close: d.close, 
+            totalForHolding: d.amount * effectiveQty, 
+            currency: fetchedCurrency, ticker: rawTicker
           })),
           totalDividends: dividends.reduce((s, d) => s + d.amount, 0),
           totalValueForHolding: dividends.reduce((s, d) => s + d.amount * effectiveQty, 0),
           currency: fetchedCurrency,
           country: holding?.country || 'US',
         };
-      });
-
-      const results = await Promise.allSettled(dividendPromises);
-      const final = results
-        .filter(r => r.status === 'fulfilled' && r.value !== null)
-        .map(r => (r as PromiseFulfilledResult<any>).value);
+      }).filter(x => x !== null);
 
       setStockDividends(final);
     } catch (e: any) {
