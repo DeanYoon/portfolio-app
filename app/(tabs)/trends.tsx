@@ -1,5 +1,4 @@
 import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState } from 'react-native';
-import type { AppStateStatus } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -9,7 +8,6 @@ import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const { width } = Dimensions.get('window');
 const CHART_H = 200;
@@ -21,61 +19,65 @@ const PAD_BOTTOM = 28;
 /* ---------- Allocation Pie Chart — mirror of my-portfolio-dashboard trend-charts.tsx ---------- */
 const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-// CustomPieTooltip — same pattern as my-portfolio-dashboard (L58-75)
-const CustomPieTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const d = payload[0].payload;
-    return (
-      <div style={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 12, padding: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', maxWidth: 280 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, backgroundColor: payload[0].color }} />
-          <span style={{ color: '#f4f4f5', fontSize: 12, fontWeight: 800, wordBreak: 'break-all' }}>{d.fullName}</span>
-        </div>
-        <div style={{ paddingLeft: 18 }}>
-          <div style={{ color: '#f4f4f5', fontSize: 14, fontWeight: 900, whiteSpace: 'nowrap' }}>
-            ₩{Math.round(d.value).toLocaleString()}
-          </div>
-          <div style={{ color: '#a1a1aa', fontSize: 10, fontWeight: 800 }}>
-            비중: {d.percentage}%
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
+// Simple Native Tooltip using View/Text
 function AllocationPie({ data, total }: { data: { name: string; fullName?: string; ticker: string; value: number; percentage: string; changeAmount?: number; changePercent?: number }[]; total: number }) {
+  // SVG Pie calculation
+  const radius = 100;
+  const innerRadius = 75;
+  const centerX = 150;
+  const centerY = 150;
+  
+  let cumulativeAngle = 0;
+
   return (
     <View style={{ alignItems: 'center' }}>
-      {/* Pie Chart with center overlay */}
-      <View style={{ width: '100%', height: 350, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
-        {/* Center total overlay */}
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none', zIndex: 10 }}>
+      <View style={{ width: 300, height: 300, justifyContent: 'center', alignItems: 'center' }}>
+        <Svg width={300} height={300} viewBox="0 0 300 300">
+          <G transform={`translate(0, 0)`}>
+            {data.map((item, index) => {
+              const sliceAngle = (Number(item.percentage) / 100) * 360;
+              const startAngle = cumulativeAngle;
+              const endAngle = cumulativeAngle + sliceAngle;
+              cumulativeAngle += sliceAngle;
+
+              // Path calculation for donut slice
+              const x1 = centerX + radius * Math.cos((Math.PI * (startAngle - 90)) / 180);
+              const y1 = centerY + radius * Math.sin((Math.PI * (startAngle - 90)) / 180);
+              const x2 = centerX + radius * Math.cos((Math.PI * (endAngle - 90)) / 180);
+              const y2 = centerY + radius * Math.sin((Math.PI * (endAngle - 90)) / 180);
+              
+              const ix1 = centerX + innerRadius * Math.cos((Math.PI * (startAngle - 90)) / 180);
+              const iy1 = centerY + innerRadius * Math.sin((Math.PI * (startAngle - 90)) / 180);
+              const ix2 = centerX + innerRadius * Math.cos((Math.PI * (endAngle - 90)) / 180);
+              const iy2 = centerY + innerRadius * Math.sin((Math.PI * (endAngle - 90)) / 180);
+
+              const largeArcFlag = sliceAngle > 180 ? 1 : 0;
+              
+              const d = `
+                M ${x1} ${y1}
+                A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}
+                L ${ix2} ${iy2}
+                A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${ix1} ${iy1}
+                Z
+              `;
+
+              return (
+                <Path
+                  key={item.ticker}
+                  d={d}
+                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                  opacity={0.8}
+                />
+              );
+            })}
+          </G>
+        </Svg>
+        
+        {/* Center Text Overlay */}
+        <View style={{ position: 'absolute', justifyContent: 'center', alignItems: 'center' }}>
           <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 2, textTransform: 'uppercase' }}>Total Value</Text>
           <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5' }}>₩{Math.round(total).toLocaleString()}</Text>
         </View>
-
-        {data.length > 0 ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%" cy="50%"
-                innerRadius={85} outerRadius={115}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {data.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ outline: 'none', opacity: 0.8 }} />
-                ))}
-              </Pie>
-              <Tooltip wrapperStyle={{ zIndex: 100, outline: 'none' }} content={<CustomPieTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        ) : (
-          <Text style={{ fontSize: 13, color: '#52525b', fontWeight: 800 }}>표시할 데이터가 없습니다.</Text>
-        )}
       </View>
 
       {/* Allocation List */}
@@ -121,7 +123,6 @@ function MiniChart({
   onHit: (i: number) => void;
   onRelease: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const innerW = containerW - PAD_LEFT - PAD_RIGHT;
   const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
   const ys: [number, number] = yDomain;
@@ -131,35 +132,6 @@ function MiniChart({
     if (ys[1] === ys[0]) return PAD_TOP + innerH / 2;
     return PAD_TOP + innerH - ((v - ys[0]) / (ys[1] - ys[0])) * innerH;
   };
-
-  const handlePointer = useCallback((clientX: number) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const ratio = (x - PAD_LEFT) / innerW;
-    const rawIdx = Math.round(ratio * (data.length - 1));
-    const idx = Math.max(0, Math.min(data.length - 1, rawIdx));
-    if (!Number.isNaN(idx)) onHit(idx);
-  }, [innerW, data.length, onHit]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const onPointerMove = (e: PointerEvent) => { handlePointer(e.clientX); };
-    const onPointerUp = () => onRelease();
-    const onClick = (e: MouseEvent) => { handlePointer(e.clientX); };
-
-    el.addEventListener('pointermove', onPointerMove);
-    el.addEventListener('pointerup', onPointerUp);
-    el.addEventListener('click', onClick);
-    return () => {
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', onPointerUp);
-      el.removeEventListener('click', onClick);
-    };
-  }, [handlePointer, onRelease]);
 
   // Line path
   const lineD = data.length > 1
@@ -230,11 +202,11 @@ function MiniChart({
   }, [activeIndices, data, innerW, innerH]);
 
   return (
-    <View ref={containerRef} style={{ position: 'relative', cursor: 'crosshair' }}
+    <View style={{ position: 'relative' }}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderMove={(e) => {
-        const locX = (e.nativeEvent as any).locationX;
+        const locX = e.nativeEvent.locationX;
         if (typeof locX === 'number') {
           const ratio = (locX - PAD_LEFT) / innerW;
           const rawIdx = Math.round(ratio * (data.length - 1));
