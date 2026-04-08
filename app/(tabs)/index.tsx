@@ -406,7 +406,7 @@ export default function DashboardScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: '700', color: '#e4e4e7' }} numberOfLines={1}>{h.displayName}</Text>
                       <Text style={{ fontSize: 11, color: '#52525b' }}>
-                        {h.ticker} · {h.currency}
+                        {h.currency}
                         <Text style={{ color: '#71717a' }}> · 현재가: {isLocalCurrency ? formatCurrency(h.currentPrice, h.currency) : formatCurrency(h.currentPrice * (h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1), 'KRW')}</Text>
                       </Text>
                     </View>
