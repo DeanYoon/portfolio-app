@@ -82,27 +82,19 @@ export default function DividendsScreen() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Holdings, Japan Funds(캐시 전체), Exchange Rates를 병렬로 호출 (Holdings는 캐시 활용)
-      const [holdings, jpRes, ratesRes] = await Promise.all([
-        getHoldings(pid),
-        supabase.from('japan_funds').select('*'),
-        fetch(`${VERCEL_API}/quote?symbols=USDKRW=X,JPYKRW=X`).then(r => r.json())
-      ]);
-
+      // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (비동기지만 로컬이라 매우 빠름)
+      const holdings = await getHoldings(pid);
       if (holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
-
-      const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
-      const jpFundData = jpRes.data || [];
       
-      // 환율 설정
-      if (ratesRes) {
-        setExchangeRates({
-          usdkrw: ratesRes['USDKRW=X']?.price || 1400,
-          jpykrw: ratesRes['JPYKRW=X']?.price || 9.5,
-        });
-      }
+      const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
 
-      // 2. 가격 및 배당 데이터를 병렬로 호출
+      // 2. 가장 오래 걸리는 배당 데이터 API 호출을 최우선으로 시작
+      const dividendsPromise = fetch(`${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`).then(r => r.json());
+
+      // 3. 나머지 데이터(Japan Funds, Rates, Quotes)를 병렬로 호출
+      const jpFundDataPromise = supabase.from('japan_funds').select('*');
+      const ratesResPromise = fetch(`${VERCEL_API}/quote?symbols=USDKRW=X,JPYKRW=X`).then(r => r.json());
+
       const rawToApi: Record<string, string> = {};
       const apiTickerSet = new Set<string>();
       for (const t of rawTickers) {
@@ -114,13 +106,27 @@ export default function DividendsScreen() {
         rawToApi[t] = apiTicker;
         apiTickerSet.add(apiTicker);
       }
+      const priceResPromise = apiTickerSet.size > 0 
+        ? fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`).then(r => r.json())
+        : Promise.resolve({});
 
-      const [priceRes, bulkDivData] = await Promise.all([
-        apiTickerSet.size > 0 
-          ? fetch(`${VERCEL_API}/quote?symbols=${[...apiTickerSet].join(',')}`).then(r => r.json())
-          : Promise.resolve({}),
-        fetch(`${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`).then(r => r.json())
+      // 모든 병렬 요청 대기 (여기서 배당 API가 처리되는 동안 다른 작업도 함께 진행됨)
+      const [bulkDivData, jpRes, ratesRes, priceRes] = await Promise.all([
+        dividendsPromise,
+        jpFundDataPromise,
+        ratesResPromise,
+        priceResPromise
       ]);
+
+      const jpFundData = jpRes.data || [];
+      
+      // 환율 설정
+      if (ratesRes) {
+        setExchangeRates({
+          usdkrw: ratesRes['USDKRW=X']?.price || 1400,
+          jpykrw: ratesRes['JPYKRW=X']?.price || 9.5,
+        });
+      }
 
       // 가격 맵 구성
       const priceMap: Record<string, number> = {};
