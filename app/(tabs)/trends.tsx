@@ -6,6 +6,7 @@ import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
+import { getHoldings } from '@/src/utils/holdings-cache';
 import { Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
 
@@ -390,11 +391,11 @@ export default function TrendsScreen() {
     setDataLoading(true);
     setLoading(true);
     try {
-      // 1. Portfolios, Snapshots, Holdings를 병렬로 호출
-      const [pRes, sRes, hRes] = await Promise.all([
+      // 1. Portfolios, Snapshots, Holdings를 병렬로 호출 (Holdings는 캐시 활용)
+      const [pRes, sRes, folderHoldings] = await Promise.all([
         supabase.from('portfolios').select('id, name').eq('user_id', session.user.id),
         supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }),
-        supabase.from('holdings').select('id, ticker, name, avg_price, quantity, currency, country, portfolio_id')
+        getHoldings()
       ]);
 
       if (!pRes.data || pRes.data.length === 0) {
@@ -403,9 +404,7 @@ export default function TrendsScreen() {
       }
       
       const pIds = pRes.data.map(p => p.id);
-      // 필터링은 클라이언트 사이드에서 수행하여 병렬성 극대화 (이미 전체를 가져옴)
       const folderSnapshots = sRes.data?.filter(s => pIds.includes(s.portfolio_id)) || [];
-      const folderHoldings = hRes.data?.filter(h => pIds.includes(h.portfolio_id)) || [];
 
       setRawSnapshots(folderSnapshots);
       setHoldings(folderHoldings);

@@ -2,6 +2,7 @@ import { View, Text, Modal, TextInput, TouchableOpacity, ScrollView, ActivityInd
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/src/lib/supabase';
 import { X, Trash2 } from 'lucide-react-native';
+import { clearHoldingsCache } from '@/src/utils/holdings-cache';
 
 interface HoldingModalProps {
   visible: boolean;

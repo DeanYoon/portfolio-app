@@ -8,6 +8,7 @@ import { useAuth } from '@/src/hooks/useAuth';
 import { formatCurrency, formatRate, getFlag, getCountry, getCurrency } from '@/src/utils/format';
 import { calculateTax } from '@/src/utils/math';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
+import { getHoldings } from '@/src/utils/holdings-cache';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw,
   ChevronDown, ArrowUpRight, ArrowDownRight,
@@ -185,7 +186,7 @@ export default function DashboardScreen() {
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (forceRefresh = false) => {
     if (!session) return;
     setDataLoading(true);
     setLoading(true);
@@ -193,12 +194,21 @@ export default function DashboardScreen() {
       const { data: pData, error } = await supabase
         .from('portfolios').select('*, holdings(*)').eq('user_id', session.user.id);
       if (error || !pData) { console.error(error); setLoading(false); return; }
-      setPortfolios(pData as Portfolio[]);
-
+      
       const actId = selectedId || String(pData[0]?.id);
       if (!selectedId && pData.length > 0) setSelectedId(String(pData[0].id));
+
+      // Use Cache for holdings
+      const cachedHoldings = await getHoldings(undefined, forceRefresh);
       
-      const tickers = Array.from(new Set([...pData.flatMap(p => p.holdings.map((h: Holding) => h.ticker)), '^VIX', 'USDKRW=X', 'JPYKRW=X']));
+      // Update pData holdings with cached values for consistency across tabs
+      const updatedPData = pData.map(p => ({
+        ...p,
+        holdings: cachedHoldings.filter(h => h.portfolio_id === p.id)
+      }));
+      setPortfolios(updatedPData as Portfolio[]);
+      
+      const tickers = Array.from(new Set([...cachedHoldings.map((h: Holding) => h.ticker), '^VIX', 'USDKRW=X', 'JPYKRW=X']));
       const prices = await fetchYahooPrices(tickers);
       setPriceMap(prices);
       setUsdKrw(prices['USDKRW=X']?.price || 1400);
@@ -210,7 +220,7 @@ export default function DashboardScreen() {
   }, [session, selectedId]);
   useEffect(() => { if (session) loadDashboard(); }, [session, loadDashboard]);
 
-  const onRefresh = useCallback(() => { setRefreshing(true); loadDashboard(); }, [loadDashboard]);
+  const onRefresh = useCallback(() => { setRefreshing(true); loadDashboard(true); }, [loadDashboard]);
 
   // ─── Computing logic ───
   const processedData = useMemo(() => {

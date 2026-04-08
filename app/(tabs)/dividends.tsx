@@ -5,6 +5,7 @@ import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
+import { getHoldings } from '@/src/utils/holdings-cache';
 import { formatCurrency, getFlag } from '@/src/utils/format';
 import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
 import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
@@ -81,15 +82,13 @@ export default function DividendsScreen() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Holdings, Japan Funds(캐시 전체), Exchange Rates를 병렬로 호출
-      const [hRes, jpRes, ratesRes] = await Promise.all([
-        supabase.from('holdings').select('ticker, name, quantity, currency, country, portfolio_id').eq('portfolio_id', pid),
+      // 1. Holdings, Japan Funds(캐시 전체), Exchange Rates를 병렬로 호출 (Holdings는 캐시 활용)
+      const [holdings, jpRes, ratesRes] = await Promise.all([
+        getHoldings(pid),
         supabase.from('japan_funds').select('*'),
         fetch(`${VERCEL_API}/quote?symbols=USDKRW=X,JPYKRW=X`).then(r => r.json())
       ]);
 
-      if (hRes.error) throw new Error(hRes.error.message);
-      const holdings = hRes.data || [];
       if (holdings.length === 0) { setStockDividends([]); setLoading(false); return; }
 
       const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
