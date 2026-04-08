@@ -470,7 +470,7 @@ export default function TrendsScreen() {
       // DB의 T00:00:00Z 데이터는 실제로는 해당 날짜가 시작되는 자정 시점의 기록임.
       // 이를 차트상에서 "전날의 결과"로 보여주기 위해 1분 차감하여 전날 날짜로 변환.
       if (curr.snapshot_date.includes('T00:00:00')) {
-        d.setMinutes(d.setMinutes(0) - 1);
+        d.setMinutes(d.getMinutes() - 1);
       }
       const date = d.toISOString().split('T')[0];
       acc[date] = (acc[date] || 0) + Number(curr.total_value_krw);
