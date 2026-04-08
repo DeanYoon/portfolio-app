@@ -462,15 +462,14 @@ export default function TrendsScreen() {
   const periodChange = displayedLast - displayedFirst;
   const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
 
-  // ─── Allocation data ───
-  const [allocationTotal, setAllocationTotal] = useState(0);
-  const allocationData = useMemo(() => {
+  // ─── Allocation data & total (combined memo) ───
+  const { allocationData, allocationTotal } = useMemo(() => {
     const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
-    if (filtered.length === 0) return [];
-    
+    if (filtered.length === 0) return { items: [], total: 0 };
+
     const usdkrw = priceMap['USDKRW=X']?.price || 1400;
     const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-    
+
     let total = 0;
     const items = filtered.map(h => {
       const isCash = h.ticker.startsWith('CASH_');
@@ -481,21 +480,21 @@ export default function TrendsScreen() {
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
       const effectiveRate = isCash ? 1 : rate;
       const valueKRW = qty * currentPrice * effectiveRate;
-      const changeAmountLocal = isCash ? 0 : (priceInfo?.change_amount || 0) * qty;
-      const changePercent = isCash ? 0 : (priceInfo?.change_percent || 0);
-      total += valueKRW;
+      if (valueKRW > 0) total += Math.round(valueKRW);
       return {
         name: h.name || h.ticker,
         fullName: priceInfo?.name || h.name || h.ticker,
         ticker: h.ticker,
         value: Math.round(valueKRW),
-        changeAmount: Math.round(changeAmountLocal * effectiveRate),
-        changePercent,
+        changeAmount: Math.round((priceInfo?.change_amount || 0) * qty * effectiveRate),
+        changePercent: isCash ? 0 : (priceInfo?.change_percent || 0),
       };
     }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
-    
-    setAllocationTotal(Math.round(total));
-    return items.map(a => ({ ...a, percentage: total > 0 ? ((a.value / total) * 100).toFixed(1) : '0' }));
+
+    return {
+      items: items.map(a => ({ ...a, percentage: total > 0 ? ((a.value / total) * 100).toFixed(1) : '0' })),
+      total: total
+    };
   }, [holdings, priceMap, selectedPortfolioId]);
 
   // ─── 분석 데이터 렌더링 ───
@@ -587,13 +586,11 @@ export default function TrendsScreen() {
           ))}
         </View>
 
-        <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 24, textAlign: 'center' }}>TAP A POINT ON CHART</Text>
-
         <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>ALLOCATION</Text>
-        {allocationData.length > 0 ? (
+        {allocationData.items.length > 0 ? (
           <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 16, marginBottom: 12 }}>
             <View style={{ minHeight: 450 }}>
-              <AllocationPie data={allocationData} total={allocationTotal} />
+              <AllocationPie data={allocationData.items} total={allocationTotal} />
             </View>
           </View>
         ) : (
