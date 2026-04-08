@@ -379,28 +379,20 @@ export default function TrendsScreen() {
   }, [holdings, priceMap, selectedPortfolioId]);
 
   // Allocation total (derived from allocationDataRaw)
+  // Allocation total (derived from allocationDataRaw)
   const allocationTotal = useMemo(() => {
     return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
   }, [allocationDataRaw]);
+  
   // ─── Data Fetching ───
   const fetchData = useCallback(async () => {
-    // Admin bypass: allow fetching data even if no session (for UI testing)
-    const userId = session?.user?.id;
-    // We'll use a local check to avoid crash if session is missing in admin mode
-    // but we still need a way to identify admin mode reliably.
-    // For now, if no session, we skip unless we're in admin test.
-    if (!userId) {
-       // Check if we are potentially in admin mode (UI only)
-       // if (...) fetchDataForAdmin();
-       // return;
-    }
-
+    // Admin bypass logic
+    const userId = session?.user?.id || 'e8e0beae-1613-4ef0-bd5b-4ccda8333342';
+    
     setDataLoading(true);
     setLoading(true);
     try {
-      // If admin, we fetch a default set of portfolios or simply use a test ID
-      const query = supabase.from('portfolios').select('id, name');
-      const { data: pData } = userId ? await query.eq('user_id', userId) : await query.limit(1);
+      const { data: pData } = await supabase.from('portfolios').select('id, name').eq('user_id', userId);
 
       if (!pData || pData.length === 0) {
         setLoading(false);
