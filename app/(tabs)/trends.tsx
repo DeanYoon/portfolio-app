@@ -427,12 +427,12 @@ export default function TrendsScreen() {
       return acc;
     }, {});
     let formatted = Object.entries(grouped).map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number })).sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
-    // allocationTotal로 마지막 total을 보정하여 상단 금액과 Allocation 총액이 일치하도록 함
-    if (formatted.length > 0 && allocationTotal > 0) {
-      formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocationTotal };
+    // allocation.total로 마지막 total을 보정하여 상단 금액과 Allocation 총액이 일치하도록 함
+    if (formatted.length > 0 && allocation.total > 0) {
+      formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocation.total };
     }
     return formatted.map((s, i) => ({ ...s, change: i === 0 ? 0 : s.total_value_krw - formatted[i - 1].total_value_krw }));
-  }, [rawSnapshots, selectedPortfolioId, allocationTotal]);
+  }, [rawSnapshots, selectedPortfolioId, allocation.total]);
 
   const displayedSnapshots = useMemo(() => {
     if (period === 'ALL') return allHistory;
@@ -463,7 +463,7 @@ export default function TrendsScreen() {
   const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
 
   // ─── Allocation data & total (combined memo) ───
-  const { allocationData, allocationTotal } = useMemo(() => {
+  const allocation = useMemo(() => {
     const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
     if (filtered.length === 0) return { items: [], total: 0 };
 
@@ -587,10 +587,10 @@ export default function TrendsScreen() {
         </View>
 
         <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 12 }}>ALLOCATION</Text>
-        {allocationData.items.length > 0 ? (
+        {allocation.items.length > 0 ? (
           <View style={{ backgroundColor: '#18181b', borderRadius: 20, borderWidth: 1, borderColor: '#27272a', padding: 16, marginBottom: 12 }}>
             <View style={{ minHeight: 450 }}>
-              <AllocationPie data={allocationData.items} total={allocationTotal} />
+              <AllocationPie data={allocation.items} total={allocation.total} />
             </View>
           </View>
         ) : (
