@@ -224,7 +224,7 @@ export default function TrendsScreen() {
         <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2 }}>{period} PERFORMANCE</Text>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 8, marginBottom: 20 }}>
           <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(lastVal)}</Text>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: colorPos ? '#22c55e' : '#3b82f6', marginBottom: 4 }}>{colorPos ? '+' : ''}{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: colorPos ? '#22c55e' : '#3b82f6', marginBottom: 4 }}>{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
         </View>
         <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} /></View>
       </View>
