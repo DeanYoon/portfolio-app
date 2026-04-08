@@ -428,12 +428,15 @@ export default function TrendsScreen() {
     let filtered = rawSnapshots;
     if (selectedPortfolioId !== 'ALL') filtered = rawSnapshots.filter(s => s.portfolio_id === selectedPortfolioId);
     const grouped = filtered.reduce((acc: Record<string, number>, curr) => {
-      const date = curr.snapshot_date.split('T')[0]; // 날짜만 추출
+      // UTC 기준 snapshot_date를 현지 날짜(YYYY-MM-DD)로 변환
+      // DB의 2026-04-08T00:00:00Z는 현지 시간으로 "전날 밤"의 마감 데이터임
+      const d = new Date(curr.snapshot_date);
+      d.setMinutes(d.getMinutes() - 1); // 자정(00:00) 데이터를 전날 날짜로 편입시키기 위해 1분 차감
+      const date = d.toISOString().split('T')[0];
       acc[date] = (acc[date] || 0) + Number(curr.total_value_krw);
       return acc;
     }, {});
 
-    // 오늘 날짜 추출 (JST/KST 기준)
     const todayStr = new Date().toISOString().split('T')[0];
     
     // 오늘 날짜의 기존 스냅샷 데이터가 있다면 제거 (실시간 데이터로 대체하기 위함)
