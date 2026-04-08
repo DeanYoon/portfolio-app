@@ -432,11 +432,22 @@ export default function TrendsScreen() {
       acc[date] = (acc[date] || 0) + Number(curr.total_value_krw);
       return acc;
     }, {});
-    let formatted = Object.entries(grouped).map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number })).sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
-// allocationTotal로 마지막 total을 보정하여 상단 금액과 Allocation 총액이 일치하도록 함
-    if (formatted.length > 0 && allocationTotal > 0) {
-      formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocationTotal };
+
+    // 오늘 날짜 추출 (JST/KST 기준)
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // 오늘 날짜의 기존 스냅샷 데이터가 있다면 제거 (실시간 데이터로 대체하기 위함)
+    delete grouped[todayStr];
+
+    let formatted = Object.entries(grouped)
+      .map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number }))
+      .sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+
+    // allocationTotal(실시간 합계)을 오늘 날짜의 마지막 데이터로 추가
+    if (allocationTotal > 0) {
+      formatted.push({ snapshot_date: todayStr, total_value_krw: allocationTotal });
     }
+    
     return formatted;
   }, [rawSnapshots, selectedPortfolioId, allocationTotal]);
 
