@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal, RefreshControl } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -47,6 +47,7 @@ export default function DividendsScreen() {
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
   const [exchangeRates, setExchangeRates] = useState({ usdkrw: 1400, jpykrw: 9.5 });
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
+  const [refreshing, setRefreshing] = useState(false);
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
@@ -214,11 +215,19 @@ export default function DividendsScreen() {
     } finally {
       setLoading(false);
       setDataLoading(false);
+      setRefreshing(false);
       isFetchingRef.current = false;
     }
   }, []);
 
   useEffect(() => { if (selectedPortfolioId) fetchDividends(selectedPortfolioId); }, [selectedPortfolioId, fetchDividends]);
+
+  const onRefresh = useCallback(() => {
+    if (selectedPortfolioId) {
+      setRefreshing(true);
+      fetchDividends(selectedPortfolioId, true);
+    }
+  }, [selectedPortfolioId, fetchDividends]);
 
   // ── Helpers ──
   const convKrw = useCallback((amt: number, cur: string) => {
@@ -299,7 +308,10 @@ export default function DividendsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}>
+      <ScrollView 
+        contentContainerStyle={{ padding: 16, paddingTop: 8 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />}
+      >
         {/* Controls */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
           <TouchableOpacity onPress={() => setIsAfterTax(!isAfterTax)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: isAfterTax ? '#22c55e' : '#18181b', borderWidth: 1, borderColor: isAfterTax ? '#22c55e' : '#27272a' }}>

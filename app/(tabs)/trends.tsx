@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState, AppStateStatus } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState, AppStateStatus, RefreshControl } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -134,6 +134,7 @@ export default function TrendsScreen() {
   const [holdings, setHoldings] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const isFetchingRef = useRef(false);
 
   const loadTrends = useCallback(async (forceRefresh = false) => {
@@ -163,19 +164,37 @@ export default function TrendsScreen() {
       setPortfolios(pRes.data);
       setPriceMap(fmtPrices);
     } catch (e) { console.error(e); }
-    finally { setDataLoading(false); isFetchingRef.current = false; }
+    finally { setDataLoading(false); setRefreshing(false); isFetchingRef.current = false; }
   }, [session]);
 
   const allocationData = useMemo(() => {
     const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
     const usdkrw = priceMap['USDKRW=X']?.price || 1400; const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-    const items = filtered.map(h => {
-      const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
+    
+    const grouped: Record<string, { name: string; fullName: string; ticker: string; value: number }> = {};
+    
+    filtered.forEach(h => {
+      const mi = priceMap[h.ticker];
+      const cp = mi?.price || h.avg_price;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
       const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity/10000 : h.quantity;
       const val = Math.round(qty * cp * rate);
-      return { name: h.name || h.ticker, fullName: mi?.name || h.name || h.ticker, ticker: h.ticker, value: val };
-    }).filter(i => i.value > 0).sort((a,b) => b.value - a.value);
+      
+      if (val <= 0) return;
+      
+      if (grouped[h.ticker]) {
+        grouped[h.ticker].value += val;
+      } else {
+        grouped[h.ticker] = {
+          name: h.name || h.ticker,
+          fullName: mi?.name || h.name || h.ticker,
+          ticker: h.ticker,
+          value: val
+        };
+      }
+    });
+
+    const items = Object.values(grouped).sort((a,b) => b.value - a.value);
     const total = items.reduce((s, i) => s + i.value, 0);
     return { items: items.map(i => ({ ...i, percentage: total > 0 ? (i.value/total*100).toFixed(1) : "0" })), total };
   }, [holdings, priceMap, selectedPortfolioId]);
@@ -201,6 +220,11 @@ export default function TrendsScreen() {
 
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s && s !== selectedPortfolioId) setSelectedPortfolioIdLocal(s); loadTrends(); }); }, [selectedPortfolioId, loadTrends]));
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadTrends(true);
+  }, [loadTrends]);
+
   if (authLoading || (dataLoading && holdings.length === 0)) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
 
   const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max-min)*0.1 || min*0.1; return [Math.max(0, min-pad), max+pad]; })() : [0, 100];
@@ -208,7 +232,11 @@ export default function TrendsScreen() {
   const diff = lastVal - firstVal; const colorPos = diff >= 0;
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#09090b' }} contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}>
+    <ScrollView 
+      style={{ flex: 1, backgroundColor: '#09090b' }} 
+      contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />}
+    >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: '900', color: '#f4f4f5' }}>Portfolio Trends</Text>
         <View style={{ flexDirection: 'row', backgroundColor: '#18181b', borderRadius: 8, padding: 4 }}>

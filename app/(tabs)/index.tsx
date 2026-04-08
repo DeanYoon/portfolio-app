@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Alert, Modal, Animated, Easing } from 'react-native';
 import { router, Redirect, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
@@ -106,6 +106,33 @@ export default function DashboardScreen() {
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
   const isFetchingRef = useRef(false);
+  const rotation = useRef(new Animated.Value(0)).current;
+
+  // ─── Animation Logic ───
+  useEffect(() => {
+    if (refreshing) {
+      Animated.loop(
+        Animated.timing(rotation, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      Animated.timing(rotation, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [refreshing, rotation]);
+
+  const spin = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const setSelectedId = async (id: string | undefined) => {
     setSelectedIdLocal(id);
@@ -231,7 +258,11 @@ export default function DashboardScreen() {
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text><ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}><RefreshCw size={20} color="#e4e4e7" /></TouchableOpacity>
+          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+            <Animated.View style={{ transform: [{ rotate: spin }] }}>
+              <RefreshCw size={20} color="#e4e4e7" />
+            </Animated.View>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}><Plus size={20} color="#052e16" /></TouchableOpacity>
         </View>
       </View>
