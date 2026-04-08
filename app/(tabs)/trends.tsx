@@ -427,12 +427,11 @@ export default function TrendsScreen() {
       return acc;
     }, {});
     let formatted = Object.entries(grouped).map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number })).sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
-    // allocation.total로 마지막 total을 보정하여 상단 금액과 Allocation 총액이 일치하도록 함
-    if (formatted.length > 0 && allocation.total > 0) {
-      formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocation.total };
+// allocationTotal로 마지막 total을 보정하여 상단 금액과 Allocation 총액이 일치하도록 함
+    if (formatted.length > 0 && allocationTotal > 0) {
+      formatted[formatted.length - 1] = { ...formatted[formatted.length - 1], total_value_krw: allocationTotal };
     }
-    return formatted.map((s, i) => ({ ...s, change: i === 0 ? 0 : s.total_value_krw - formatted[i - 1].total_value_krw }));
-  }, [rawSnapshots, selectedPortfolioId, allocation.total]);
+  }, [rawSnapshots, selectedPortfolioId, allocationTotal]);
 
   const displayedSnapshots = useMemo(() => {
     if (period === 'ALL') return allHistory;
