@@ -26,6 +26,7 @@ export default function SettingsScreen() {
         style: 'destructive',
         onPress: async () => {
           await signOut(); // Clear Supabase session
+          await AsyncStorage.clear(); // Clear all local storage data
           router.replace('/(auth)/login');
         },
       },
