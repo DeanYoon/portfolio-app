@@ -462,16 +462,15 @@ export default function TrendsScreen() {
   const periodChange = displayedLast - displayedFirst;
   const periodRate = displayedFirst > 0 ? (periodChange / displayedFirst) * 100 : 0;
 
-  // ─── Allocation data & total (combined memo) ───
-  const allocation = useMemo(() => {
+  // ─── Allocation data (items only) ───
+  const allocationDataRaw = useMemo(() => {
     const filtered = selectedPortfolioId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedPortfolioId);
-    if (filtered.length === 0) return { items: [], total: 0 };
+    if (filtered.length === 0) return [];
 
     const usdkrw = priceMap['USDKRW=X']?.price || 1400;
     const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
 
-    let total = 0;
-    const items = filtered.map(h => {
+    return filtered.map(h => {
       const isCash = h.ticker.startsWith('CASH_');
       const isJpFund = h.country === 'JP' && (/^[0-9A-Z]{8}$/.test(h.ticker) || h.ticker === '9I312249');
       const priceInfo = priceMap[h.ticker];
@@ -480,7 +479,6 @@ export default function TrendsScreen() {
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
       const effectiveRate = isCash ? 1 : rate;
       const valueKRW = qty * currentPrice * effectiveRate;
-      if (valueKRW > 0) total += Math.round(valueKRW);
       return {
         name: h.name || h.ticker,
         fullName: priceInfo?.name || h.name || h.ticker,
@@ -490,12 +488,20 @@ export default function TrendsScreen() {
         changePercent: isCash ? 0 : (priceInfo?.change_percent || 0),
       };
     }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
-
-    return {
-      items: items.map(a => ({ ...a, percentage: total > 0 ? ((a.value / total) * 100).toFixed(1) : '0' })),
-      total: total
-    };
   }, [holdings, priceMap, selectedPortfolioId]);
+
+  // Allocation total (derived from allocationDataRaw)
+  const allocationTotal = useMemo(() => {
+    return allocationDataRaw.reduce((sum, a) => sum + a.value, 0);
+  }, [allocationDataRaw]);
+
+  // Allocation data with percentages (derived from allocationDataRaw + allocationTotal)
+  const allocationData = useMemo(() => {
+    return allocationDataRaw.map(a => ({
+      ...a,
+      percentage: allocationTotal > 0 ? ((a.value / allocationTotal) * 100).toFixed(1) : '0'
+    }));
+  }, [allocationDataRaw, allocationTotal]);
 
   // ─── 분석 데이터 렌더링 ───
   const analysis = useMemo((): AnalysisData | null => {
