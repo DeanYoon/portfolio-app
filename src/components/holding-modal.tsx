@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/src/lib/supabase';
 import { X, Trash2 } from 'lucide-react-native';
 import { clearHoldingsCache } from '@/src/utils/holdings-cache';
+import { clearDividendsCache } from '@/src/utils/dividends-cache';
 
 interface HoldingModalProps {
   visible: boolean;
@@ -103,6 +104,7 @@ export default function HoldingModal({ visible, onClose, portfolioId, holdingId,
         if (error) throw error;
       }
 
+      await Promise.all([clearHoldingsCache(), clearDividendsCache()]);
       onClose();
       onSuccess();
     } catch (e: any) {
@@ -120,6 +122,7 @@ export default function HoldingModal({ visible, onClose, portfolioId, holdingId,
         .delete()
         .eq('id', holdingId);
       if (error) throw error;
+      await Promise.all([clearHoldingsCache(), clearDividendsCache()]);
       setShowDeleteConfirm(false);
       onClose();
       onSuccess();

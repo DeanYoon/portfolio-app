@@ -6,6 +6,7 @@ import { supabase } from '@/src/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { getHoldings } from '@/src/utils/holdings-cache';
+import { getDividends } from '@/src/utils/dividends-cache';
 import { formatCurrency, getFlag } from '@/src/utils/format';
 import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
 import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
@@ -88,8 +89,8 @@ export default function DividendsScreen() {
       
       const rawTickers = Array.from(new Set(holdings.map((h) => h.ticker as string))) as string[];
 
-      // 2. 가장 오래 걸리는 배당 데이터 API 호출을 최우선으로 시작
-      const dividendsPromise = fetch(`${VERCEL_API}/dividends?symbols=${rawTickers.join(',')}`).then(r => r.json());
+      // 2. 가장 오래 걸리는 배당 데이터 API 호출 (최우선 시작 & 캐시 활용)
+      const dividendsPromise = getDividends(rawTickers, VERCEL_API);
 
       // 3. 나머지 데이터(Japan Funds, Rates, Quotes)를 병렬로 호출
       const jpFundDataPromise = supabase.from('japan_funds').select('*');
