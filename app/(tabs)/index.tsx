@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Alert, Modal, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Alert, Modal, Animated, Easing, TextInput } from 'react-native';
 import { router, Redirect, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
@@ -364,14 +364,45 @@ export default function DashboardScreen() {
 
       <Modal visible={showPortfolioPicker} transparent animationType="fade" onRequestClose={() => setShowPortfolioPicker(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowPortfolioPicker(false)}>
-          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
+          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 500 }} onStartShouldSetResponder={() => true}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 16 }}>계좌 선택</Text>
-            {portfolios.map(p => (
-              <TouchableOpacity key={p.id} onPress={() => { setSelectedId(String(p.id)); setShowPortfolioPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: String(p.id) === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
-                {String(p.id) === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ marginBottom: 10 }}>
+              {portfolios.map(p => (
+                <TouchableOpacity key={p.id} onPress={() => { setSelectedId(String(p.id)); setShowPortfolioPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: String(p.id) === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
+                  {String(p.id) === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* 현재 선택된 계좌의 평균 환율 설정 */}
+            {selectedId && (
+              <View style={{ marginTop: 10, padding: 16, backgroundColor: '#09090b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a' }}>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: '#71717a', marginBottom: 10 }}>선택된 계좌 평균 환율 설정</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 10, color: '#52525b', marginBottom: 4 }}>평균 매수 환율 (USD/KRW)</Text>
+                    <TextInput
+                      style={{ backgroundColor: '#18181b', color: '#e4e4e7', fontSize: 14, fontWeight: '700', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}
+                      keyboardType="numeric"
+                      placeholder="1400.00"
+                      placeholderTextColor="#3f3f46"
+                      defaultValue={String(portfolios.find(p => String(p.id) === selectedId)?.avg_usd_krw_rate || "")}
+                      onSubmitEditing={async (e) => {
+                        const val = parseFloat(e.nativeEvent.text);
+                        if (!isNaN(val)) {
+                          const { error } = await supabase.from('portfolios').update({ avg_usd_krw_rate: val }).eq('id', selectedId);
+                          if (!error) loadDashboard(true);
+                          else Alert.alert("오류", "환율 저장에 실패했습니다.");
+                        }
+                      }}
+                    />
+                  </View>
+                </View>
+                <Text style={{ fontSize: 10, color: '#3f3f46', marginTop: 8 }}>* 입력 후 엔터를 누르면 저장됩니다.</Text>
+              </View>
+            )}
+
             <TouchableOpacity onPress={() => setShowPortfolioPicker(false)} style={{ paddingVertical: 16, alignItems: 'center' }}><Text style={{ fontSize: 14, fontWeight: '700', color: '#52525b' }}>닫기</Text></TouchableOpacity>
           </View>
         </TouchableOpacity>
