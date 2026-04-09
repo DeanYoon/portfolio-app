@@ -238,7 +238,7 @@ export default function TrendsScreen() {
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
             <ScrollView>
               {portfolios.map(p => (
-                <TouchableOpacity key={p.id} onPress={async () => { await setSelectedPortfolioIdShared(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <TouchableOpacity key={p.id} onPress={() => setSelectedId(p.id)} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: p.id === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
                   {p.id === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
                 </TouchableOpacity>
