@@ -166,6 +166,13 @@ export default function StockDetailScreen() {
 
   useEffect(() => {
     fetchStockData();
+    
+    // 5초마다 자동 갱신 (실시간성 유지하면서 서버 부하 감소)
+    const interval = setInterval(() => {
+      fetchStockData();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [fetchStockData]);
 
   // Set page title for web
