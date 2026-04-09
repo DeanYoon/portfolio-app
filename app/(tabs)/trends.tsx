@@ -111,7 +111,7 @@ export default function TrendsScreen() {
   const insets = useSafeAreaInsets();
   const { session, loading: authLoading } = useAuth();
   const [portfolios, setPortfolios] = useState<any[]>([]);
-  const [selectedId, setSelectedIdLocal] = useState<'ALL' | string>('ALL');
+  const [selectedId, setSelectedIdLocal] = useState<string>('');
   const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<any[]>([]);
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | 'ALL'>('1M');
@@ -119,7 +119,7 @@ export default function TrendsScreen() {
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [showPicker, setShowPicker] = useState(false);
-  const [selectedId, setSelectedIdLocal] = useState<string>('');
+  const isFetchingRef = useRef(false);
 
   const setSelectedId = async (id: string) => {
     setSelectedIdLocal(id); await setSelectedPortfolioId(id); setShowPicker(false);
@@ -151,46 +151,20 @@ export default function TrendsScreen() {
   }, [session]);
 
   const allocationData = useMemo(() => {
-    // selectedId가 없을 경우를 대비한 방어 로직 추가
-    const filtered = !selectedId 
-      ? holdings 
-      : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
-
-    const usdkrw = priceMap['USDKRW=X']?.price || 1400; 
-    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-    
+    const filtered = !selectedId ? holdings : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
+    const usdkrw = priceMap['USDKRW=X']?.price || 1400; const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
     const items = filtered.map(h => {
-      const mi = priceMap[h.ticker]; 
-      const cp = mi?.price || h.avg_price;
+      const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      
-      // 일본 펀드 수량 보정 (단위: 1만)
-      const isJpFund = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker);
-      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
-      
+      const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity/10000 : h.quantity;
       const val = Math.round(qty * cp * rate);
-      return { 
-        name: h.name || h.ticker, 
-        fullName: mi?.name || h.name || h.ticker, 
-        ticker: h.ticker, 
-        value: val 
-      };
+      return { name: h.name || h.ticker, fullName: mi?.name || h.name || h.ticker, ticker: h.ticker, value: val };
     }).filter(i => i.value > 0).sort((a,b) => b.value - a.value);
-
-    // 필터링된 항목들의 총합을 구함
     const total = items.reduce((s, i) => s + i.value, 0);
-    
-    return { 
-      items: items.map(i => ({ 
-        ...i, 
-        percentage: total > 0 ? ((i.value / total) * 100).toFixed(1) : "0" 
-      })), 
-      total 
-    };
+    return { items: items.map(i => ({ ...i, percentage: total > 0 ? (i.value/total*100).toFixed(1) : "0" })), total };
   }, [holdings, priceMap, selectedId]);
 
   const allHistory = useMemo(() => {
-    // selectedId 필터링 로직 수정
     const filtered = !selectedId ? rawSnapshots : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
     const grouped = filtered.reduce((acc: any, curr) => {
       const d = new Date(curr.snapshot_date); if (curr.snapshot_date.includes('T00:00:00')) d.setMinutes(d.getMinutes()-1);
