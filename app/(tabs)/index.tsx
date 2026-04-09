@@ -12,7 +12,7 @@ import { getHoldings } from '@/src/utils/holdings-cache';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw,
   ChevronDown, ArrowUpRight, ArrowDownRight,
-  DollarSign, ArrowUpDown, Plus,
+  DollarSign, ArrowUpDown, Plus, X
 } from 'lucide-react-native';
 import HoldingModal from '@/src/components/holding-modal';
 
@@ -108,6 +108,7 @@ export default function DashboardScreen() {
   const [sortBy, setSortBy] = useState<SortType>('value');
   const [isTodayMode, setIsTodayMode] = useState(false);
   const [isLocalCurrency, setIsLocalCurrency] = useState(false);
+  const [showExchangeRateModal, setShowExchangeRateModal] = useState(false);
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
   const isFetchingRef = useRef(false);
@@ -305,12 +306,39 @@ export default function DashboardScreen() {
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-          <View style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>USD/KRW</Text><Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{usdkrw.toFixed(2)}</Text>
-          </View>
-          {totals.vix && <View style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}>
-            <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>VIX</Text><Text style={{ fontSize: 14, fontWeight: '800', color: totals.vix > 25 ? '#22c55e' : totals.vix < 15 ? '#ef4444' : '#e4e4e7' }}>{totals.vix.toFixed(2)}</Text>
-          </View>}
+          <TouchableOpacity 
+            onPress={() => setShowExchangeRateModal(true)}
+            style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1 }}>USD/KRW</Text>
+              {(() => {
+                const p = portfolios.find(p => String(p.id) === (selectedId || String(portfolios[0]?.id)));
+                if (!p?.avg_usd_krw_rate) return null;
+                const diff = usdkrw - p.avg_usd_krw_rate;
+                return (
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: diff >= 0 ? '#ef4444' : '#3b82f6' }}>
+                    {diff >= 0 ? '▲' : '▼'}{Math.abs(diff).toFixed(1)} ({(diff / p.avg_usd_krw_rate * 100).toFixed(1)}%)
+                  </Text>
+                );
+              })()}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{usdkrw.toFixed(2)}</Text>
+              {(() => {
+                const p = portfolios.find(p => String(p.id) === (selectedId || String(portfolios[0]?.id)));
+                if (p?.avg_usd_krw_rate) return <Text style={{ fontSize: 10, color: '#52525b' }}>/ {p.avg_usd_krw_rate}</Text>;
+                return null;
+              })()}
+            </View>
+          </TouchableOpacity>
+          
+          {totals.vix && (
+            <View style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}>
+              <Text style={{ fontSize: 9, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 4 }}>VIX</Text>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: totals.vix > 25 ? '#22c55e' : totals.vix < 15 ? '#ef4444' : '#e4e4e7' }}>{totals.vix.toFixed(2)}</Text>
+            </View>
+          )}
         </View>
 
         <View style={{ backgroundColor: '#18181b', borderRadius: 16, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#27272a' }}>
@@ -364,7 +392,7 @@ export default function DashboardScreen() {
 
       <Modal visible={showPortfolioPicker} transparent animationType="fade" onRequestClose={() => setShowPortfolioPicker(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowPortfolioPicker(false)}>
-          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 500 }} onStartShouldSetResponder={() => true}>
+          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 16 }}>계좌 선택</Text>
             <ScrollView style={{ marginBottom: 10 }}>
               {portfolios.map(p => (
@@ -374,36 +402,57 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            {/* 현재 선택된 계좌의 평균 환율 설정 */}
-            {selectedId && (
-              <View style={{ marginTop: 10, padding: 16, backgroundColor: '#09090b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a' }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: '#71717a', marginBottom: 10 }}>선택된 계좌 평균 환율 설정</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 10, color: '#52525b', marginBottom: 4 }}>평균 매수 환율 (USD/KRW)</Text>
-                    <TextInput
-                      style={{ backgroundColor: '#18181b', color: '#e4e4e7', fontSize: 14, fontWeight: '700', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}
-                      keyboardType="numeric"
-                      placeholder="1400.00"
-                      placeholderTextColor="#3f3f46"
-                      defaultValue={String(portfolios.find(p => String(p.id) === selectedId)?.avg_usd_krw_rate || "")}
-                      onSubmitEditing={async (e) => {
-                        const val = parseFloat(e.nativeEvent.text);
-                        if (!isNaN(val)) {
-                          const { error } = await supabase.from('portfolios').update({ avg_usd_krw_rate: val }).eq('id', selectedId);
-                          if (!error) loadDashboard(true);
-                          else Alert.alert("오류", "환율 저장에 실패했습니다.");
-                        }
-                      }}
-                    />
-                  </View>
-                </View>
-                <Text style={{ fontSize: 10, color: '#3f3f46', marginTop: 8 }}>* 입력 후 엔터를 누르면 저장됩니다.</Text>
-              </View>
-            )}
-
             <TouchableOpacity onPress={() => setShowPortfolioPicker(false)} style={{ paddingVertical: 16, alignItems: 'center' }}><Text style={{ fontSize: 14, fontWeight: '700', color: '#52525b' }}>닫기</Text></TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* 환율 설정 모달 */}
+      <Modal visible={showExchangeRateModal} transparent animationType="slide" onRequestClose={() => setShowExchangeRateModal(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }} activeOpacity={1} onPress={() => setShowExchangeRateModal(false)}>
+          <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#27272a' }} onStartShouldSetResponder={() => true}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 18, fontWeight: '900', color: '#f4f4f5' }}>평균 매수 환율 설정 커스텀</Text>
+              <TouchableOpacity onPress={() => setShowExchangeRateModal(false)}><X size={20} color="#71717a" /></TouchableOpacity>
+            </View>
+            
+            <Text style={{ fontSize: 13, color: '#a1a1aa', marginBottom: 20, lineHeight: 18 }}>
+              포트폴리오의 정확한 수익률 계산을 위해{'\n'}
+              미국 주식 매수 시점의 평균 환율을 입력해주세요.
+            </Text>
+
+            <View style={{ backgroundColor: '#09090b', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#27272a' }}>
+              <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 1, marginBottom: 8 }}>AVERAGE BUY RATE (USD/KRW)</Text>
+              <TextInput
+                style={{ backgroundColor: '#18181b', color: '#e4e4e7', fontSize: 24, fontWeight: '900', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46' }}
+                keyboardType="numeric"
+                autoFocus
+                placeholder="1400.00"
+                placeholderTextColor="#27272a"
+                defaultValue={String(portfolios.find(p => String(p.id) === (selectedId || String(portfolios[0]?.id)))?.avg_usd_krw_rate || "")}
+                onSubmitEditing={async (e) => {
+                  const val = parseFloat(e.nativeEvent.text);
+                  const activeId = selectedId || String(portfolios[0]?.id);
+                  if (!isNaN(val) && activeId) {
+                    const { error } = await supabase.from('portfolios').update({ avg_usd_krw_rate: val }).eq('id', activeId);
+                    if (!error) {
+                      loadDashboard(true);
+                      setShowExchangeRateModal(false);
+                    } else {
+                      Alert.alert("오류", "환율 저장에 실패했습니다.");
+                    }
+                  }
+                }}
+              />
+              <Text style={{ fontSize: 11, color: '#3f3f46', marginTop: 12, textAlign: 'center' }}>엔터 키를 누르면 저장되고 즉시 반영됩니다.</Text>
+            </View>
+
+            <TouchableOpacity 
+              onPress={() => setShowExchangeRateModal(false)}
+              style={{ marginTop: 24, paddingVertical: 16, backgroundColor: '#27272a', borderRadius: 12, alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#e4e4e7' }}>취소</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
