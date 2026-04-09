@@ -31,6 +31,7 @@ interface Holding {
 }
 interface PriceData {
   price: number; name?: string; change_amount?: number; change_percent?: number;
+  previous_close?: number;
   last_updated?: string; error?: string;
 }
 
@@ -62,7 +63,14 @@ const fetchPricesNew = async (tickers: string[]): Promise<Record<string, PriceDa
         for (const [tk, info] of Object.entries(json)) {
           const i = info as any;
           if (i.price !== undefined) {
-            map[tk] = { price: i.price, name: i.symbol || tk, change_amount: i.change || 0, change_percent: i.changePercent || 0, last_updated: new Date().toISOString() };
+            map[tk] = { 
+              price: i.price, 
+              name: i.symbol || tk, 
+              change_amount: i.change || 0, 
+              change_percent: i.changePercent || 0, 
+              previous_close: i.previousClose,
+              last_updated: new Date().toISOString() 
+            };
           }
         }
       }
@@ -220,16 +228,23 @@ export default function DashboardScreen() {
         const vK = vL * currentRate;  // 현재 가치 (현재 환율)
         const iK = iL * (h.currency === 'USD' ? buyRate : currentRate); // 매수 금액 (매수 시점 환율 적용)
         
-        const dK = (mi?.change_amount || 0) * qty * currentRate;
+        // --- 📊 일일 변동 계산 (주가 변동 + 환율 변동 모두 반영) ---
+        const fxInfo = h.currency === 'USD' ? priceMap['USDKRW=X'] : h.currency === 'JPY' ? priceMap['JPYKRW=X'] : null;
         
-        // 수익률: (현재가치 - 매수금액) / 매수금액
-        // 환율 변동이 반영된 실제 수익률입니다.
+        const currentLocalPrice = cp;
+        const previousLocalPrice = mi?.previous_close || (currentLocalPrice - (mi?.change_amount || 0));
+        
+        const currentFX = currentRate;
+        const previousFX = fxInfo?.previous_close || currentFX; // 환율 변동이 없는 경우(KRW 등) 현재 환율 유지
+
+        const currentValueKRW = currentLocalPrice * currentFX * qty;
+        const previousValueKRW = previousLocalPrice * previousFX * qty;
+        
+        const dK = isCash ? 0 : (currentValueKRW - previousValueKRW);
+        const dayChangePct = isCash ? 0 : (previousValueKRW > 0 ? ((currentValueKRW - previousValueKRW) / previousValueKRW) * 100 : 0);
+        
         const effectiveProfitRate = isCash ? 0 : (iK > 0 ? ((vK - iK) / iK) * 100 : 0);
-
-        const dayChangePct = (mi?.price && mi?.change_amount) 
-          ? (mi.change_amount / (mi.price - mi.change_amount)) * 100 
-          : 0;
-
+        
         pT += vK; pI += iK; pD += dK;
         if (h.currency === 'USD') { uV += vK; uP += (vK - iK); }
         else if (h.currency === 'JPY') { jV += vK; jP += (vK - iK); }
