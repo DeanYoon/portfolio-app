@@ -52,12 +52,30 @@ export default function StockDetailScreen() {
       if (isCash) {
         // 현금 자산 처리
         const cur = ticker.split('_')[1] || 'USD';
+        // 환율 정보 가져오기 (Yahoo Finance 연동)
+        const fxTicker = cur === 'KRW' ? null : `${cur}KRW=X`;
+        let currentFxPrice = 1;
+
+        if (fxTicker) {
+          try {
+            const fxRes = await fetch(`${VERCEL_API}/quote?symbols=${fxTicker}`);
+            const fxJson = await fxRes.json();
+            if (fxJson?.[fxTicker]?.price) {
+              currentFxPrice = fxJson[fxTicker].price;
+            }
+          } catch (e) {
+            console.error('FX fetch error:', e);
+            // 실패 시 기본값 (기존 캐시 등 활용 가능하지만 여기선 fallback)
+            currentFxPrice = cur === 'USD' ? 1400 : (cur === 'JPY' ? 9.5 : 1);
+          }
+        }
+
         setPriceData({
-          price: 1,
+          price: currentFxPrice,
           name: `${cur} Cash`,
           change_amount: 0,
           change_percent: 0,
-          currency: cur,
+          currency: 'KRW', // 현금 자산의 상세페이지 가치는 원화 환산가로 표시
           last_updated: new Date().toISOString(),
         });
         setHistory([]);
