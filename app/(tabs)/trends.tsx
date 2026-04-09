@@ -151,17 +151,42 @@ export default function TrendsScreen() {
   }, [session]);
 
   const allocationData = useMemo(() => {
-    const filtered = selectedId === 'ALL' ? holdings : holdings.filter(h => h.portfolio_id === selectedId);
-    const usdkrw = priceMap['USDKRW=X']?.price || 1400; const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
+    // portfolio_id 비교 시 타입을 통일 (String)
+    const filtered = selectedId === 'ALL' 
+      ? holdings 
+      : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
+
+    const usdkrw = priceMap['USDKRW=X']?.price || 1400; 
+    const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
+    
     const items = filtered.map(h => {
-      const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
+      const mi = priceMap[h.ticker]; 
+      const cp = mi?.price || h.avg_price;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity/10000 : h.quantity;
+      
+      // 일본 펀드 수량 보정 (단위: 1만)
+      const isJpFund = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker);
+      const qty = isJpFund ? h.quantity / 10000 : h.quantity;
+      
       const val = Math.round(qty * cp * rate);
-      return { name: h.name || h.ticker, fullName: mi?.name || h.name || h.ticker, ticker: h.ticker, value: val };
+      return { 
+        name: h.name || h.ticker, 
+        fullName: mi?.name || h.name || h.ticker, 
+        ticker: h.ticker, 
+        value: val 
+      };
     }).filter(i => i.value > 0).sort((a,b) => b.value - a.value);
+
+    // 필터링된 항목들의 총합을 구함
     const total = items.reduce((s, i) => s + i.value, 0);
-    return { items: items.map(i => ({ ...i, percentage: total > 0 ? (i.value/total*100).toFixed(1) : "0" })), total };
+    
+    return { 
+      items: items.map(i => ({ 
+        ...i, 
+        percentage: total > 0 ? ((i.value / total) * 100).toFixed(1) : "0" 
+      })), 
+      total 
+    };
   }, [holdings, priceMap, selectedId]);
 
   const allHistory = useMemo(() => {
