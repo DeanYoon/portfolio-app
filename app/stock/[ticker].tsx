@@ -74,7 +74,19 @@ export default function StockDetailScreen() {
         }
         if (histJson?.[ticker]) {
           const entries = Object.entries(histJson[ticker]);
-          const points = entries.map(([date, bar]: [string, any]) => ({ date, close: bar.close })).filter((b: any) => b.close != null).sort((a: any, b: any) => a.date.localeCompare(b.date));
+          // ─── 기간(period)에 따른 필터링 추가 ───
+          const now = new Date();
+          const cutoff = new Date();
+          if (period === '1mo') cutoff.setMonth(now.getMonth() - 1);
+          else if (period === '6mo') cutoff.setMonth(now.getMonth() - 6);
+          else cutoff.setFullYear(now.getFullYear() - 1);
+          const cutoffStr = cutoff.toISOString().split('T')[0];
+
+          const points = entries
+            .map(([date, bar]: [string, any]) => ({ date, close: bar.close }))
+            .filter((b: any) => b.close != null && b.date >= cutoffStr) // 기간 필터링 적용
+            .sort((a: any, b: any) => a.date.localeCompare(b.date));
+
           setHistory((prev: any) => JSON.stringify(prev) === JSON.stringify(points) ? prev : points);
         }
       }
