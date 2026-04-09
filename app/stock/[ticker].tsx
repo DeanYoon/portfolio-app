@@ -5,6 +5,8 @@ import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
 import { getStockHistory } from '@/src/utils/history-cache';
+import { getTickerQuote } from '@/src/utils/quote-cache';
+import { getHoldings } from '@/src/utils/holdings-cache';
 import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -61,18 +63,18 @@ export default function StockDetailScreen() {
         }
         setHistory([]);
       } else {
-        const quotePromise = fetch(`${VERCEL_API}/quote?symbols=${ticker}`).then(r => r.json()).catch(() => null);
+        // 주식 (US/KR) 처리 (캐시 도입)
+        const quotePromise = getTickerQuote(ticker, VERCEL_API, !isSilent); // Silent 아닐 때만 강제 갱신 고려 (최초 로드 시)
         const historyPromise = getStockHistory(ticker, period, VERCEL_API);
-        const [quoteJson, histJson] = await Promise.all([quotePromise, historyPromise]);
 
-        if (quoteJson?.[ticker]) {
-          const q = quoteJson[ticker];
-          if (q?.price) {
-            setPriceData((prev: any) => {
-              const next = { price: q.price, name: q.name || q.symbol || ticker, change_amount: q.change || 0, change_percent: q.changePercent || 0, currency: q.currency || 'USD', last_updated: new Date().toISOString() };
-              return (prev?.price === next.price && prev?.change_amount === next.change_amount) ? prev : next;
-            });
-          }
+        const [quoteData, histJson] = await Promise.all([quotePromise, historyPromise]);
+
+        if (quoteData) {
+          const q = quoteData;
+          setPriceData((prev: any) => {
+            const next = { price: q.price, name: q.name || q.symbol || ticker, change_amount: q.change || 0, change_percent: q.changePercent || 0, currency: q.currency || 'USD', last_updated: new Date().toISOString() };
+            return (prev?.price === next.price && prev?.change_amount === next.change_amount) ? prev : next;
+          });
         }
         if (histJson?.[ticker]) {
           const entries = Object.entries(histJson[ticker]);
@@ -81,12 +83,11 @@ export default function StockDetailScreen() {
         }
       }
 
+      // 보유 여부 확인 (24시간 캐시 활용)
       if (!isSilent) {
-        const { data: user } = await supabase.auth.getUser();
-        if (user?.user) {
-          const { data: hData } = await supabase.from('holdings').select('*, portfolios(name)').eq('ticker', ticker);
-          setHoldings(hData || []);
-        }
+        const hData = await getHoldings();
+        const myPositions = hData.filter(h => h.ticker === ticker);
+        setHoldings(myPositions);
       }
     } catch (e) {
       console.error(e);
