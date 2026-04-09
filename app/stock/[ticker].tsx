@@ -47,9 +47,22 @@ export default function StockDetailScreen() {
 
     try {
       const isJp = isJapaneseFund(ticker);
+      const isCash = ticker.startsWith('CASH_');
 
-      if (isJp) {
-        // 일본 펀드: Supabase japan_funds에서 읽기
+      if (isCash) {
+        // 현금 자산 처리
+        const cur = ticker.split('_')[1] || 'USD';
+        setPriceData({
+          price: 1,
+          name: `${cur} Cash`,
+          change_amount: 0,
+          change_percent: 0,
+          currency: cur,
+          last_updated: new Date().toISOString(),
+        });
+        setHistory([]);
+      } else if (isJp) {
+        // 일본 펀드 처리
         const { data: fundData } = await supabase
           .from('japan_funds')
           .select('*')
@@ -69,53 +82,69 @@ export default function StockDetailScreen() {
         }
         setHistory([]);
       } else {
-        // US/KR: yahoo-finance-api 경유
+        // 주식 (US/KR) 처리
         const [quoteRes, historyRes] = await Promise.all([
-          fetch(`${VERCEL_API}/quote?symbols=${ticker}`),
-          fetch(`${VERCEL_API}/history?symbols=${ticker}&period=${period}`),
+          fetch(`${VERCEL_API}/quote?symbols=${ticker}`).catch(() => null),
+          fetch(`${VERCEL_API}/history?symbols=${ticker}&period=${period}`).catch(() => null),
         ]);
 
-        const quoteJson = await quoteRes.json();
-        const q = quoteJson?.[ticker];
-        if (q?.price) {
-          setPriceData({
-            price: q.price,
-            name: q.name || q.symbol || ticker,
-            change_amount: q.change || 0,
-            change_percent: q.changePercent || 0,
-            currency: q.currency || 'USD',
-            last_updated: new Date().toISOString(),
-          });
+        if (quoteRes?.ok) {
+          const quoteJson = await quoteRes.json();
+          const q = quoteJson?.[ticker];
+          if (q?.price) {
+            setPriceData({
+              price: q.price,
+              name: q.name || q.symbol || ticker,
+              change_amount: q.change || 0,
+              change_percent: q.changePercent || 0,
+              currency: q.currency || 'USD',
+              last_updated: new Date().toISOString(),
+            });
+          }
         }
 
-        const histJson = await historyRes.json();
-        if (histJson?.[ticker] && typeof histJson[ticker] === 'object' && !Array.isArray(histJson[ticker])) {
-          // API returns { "2025-10-07": {close, ...}, "2025-10-08": {close, ...}, ... }
-          const entries = Object.entries(histJson[ticker]);
-          const points = entries
-            .map(([date, bar]: [string, any]) => ({ date, close: bar.close }))
-            .filter((b: any) => b.close != null)
-            .sort((a: any, b: any) => a.date.localeCompare(b.date));
-          setHistory(points);
+        if (historyRes?.ok) {
+          const histJson = await historyRes.json();
+          if (histJson?.[ticker] && typeof histJson[ticker] === 'object' && !Array.isArray(histJson[ticker])) {
+            const entries = Object.entries(histJson[ticker]);
+            const points = entries
+              .map(([date, bar]: [string, any]) => ({ date, close: bar.close }))
+              .filter((b: any) => b.close != null)
+              .sort((a, b) => a.date.localeCompare(b.date));
+            setHistory(points);
+          }
         }
       }
 
-      // 보유 여부 확인
+      // 보유 여부 확인 (항상 실행)
       const { data: user } = await supabase.auth.getUser();
       if (user?.user) {
-        const { data } = await supabase
+        const { data: hData } = await supabase
           .from('holdings')
           .select('*, portfolios(name)')
           .eq('ticker', ticker);
-        setHoldings(data || []);
+        setHoldings(hData || []);
       }
     } catch (e: any) {
       console.error('Error fetching stock detail:', e);
+      // 에러 발생 시에도 최소한의 이름 정보 표시
+      if (!priceData) {
+        setPriceData({
+          price: 0,
+          name: ticker,
+          change_amount: 0,
+          change_percent: 0,
+          currency: 'USD',
+          last_updated: new Date().toISOString(),
+          error: '데이터를 가져올 수 없습니다.'
+        });
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, [ticker, period, priceData]);
 
-    setLoading(false);
-    setRefreshing(false);
-  }, [ticker, period]);
 
   useEffect(() => {
     fetchStockData();
@@ -159,6 +188,18 @@ export default function StockDetailScreen() {
 
   if (loading && !priceData) {
     return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  }
+
+  if (!priceData && !loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Info size={48} color="#71717a" />
+        <Text style={{ color: '#f4f4f5', fontSize: 16, fontWeight: '800', marginTop: 16 }}>종목 정보를 찾을 수 없습니다</Text>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#27272a', borderRadius: 8 }}>
+          <Text style={{ color: '#e4e4e7', fontWeight: '700' }}>뒤로 가기</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   if (!priceData) return null;
