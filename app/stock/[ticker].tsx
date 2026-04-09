@@ -63,7 +63,6 @@ export default function StockDetailScreen() {
       } else {
         const quotePromise = fetch(`${VERCEL_API}/quote?symbols=${ticker}`).then(r => r.json()).catch(() => null);
         const historyPromise = getStockHistory(ticker, period, VERCEL_API);
-
         const [quoteJson, histJson] = await Promise.all([quotePromise, historyPromise]);
 
         if (quoteJson?.[ticker]) {
@@ -77,9 +76,8 @@ export default function StockDetailScreen() {
         }
         if (histJson?.[ticker]) {
           const entries = Object.entries(histJson[ticker]);
-            const points = entries.map(([date, bar]: [string, any]) => ({ date, close: bar.close })).filter((b: any) => b.close != null).sort((a: any, b: any) => a.date.localeCompare(b.date));
-            setHistory((prev: any) => JSON.stringify(prev) === JSON.stringify(points) ? prev : points);
-          }
+          const points = entries.map(([date, bar]: [string, any]) => ({ date, close: bar.close })).filter((b: any) => b.close != null).sort((a: any, b: any) => a.date.localeCompare(b.date));
+          setHistory((prev: any) => JSON.stringify(prev) === JSON.stringify(points) ? prev : points);
         }
       }
 
@@ -90,8 +88,11 @@ export default function StockDetailScreen() {
           setHoldings(hData || []);
         }
       }
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setRefreshing(false); isFetchingRef.current = false; }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false); setRefreshing(false); isFetchingRef.current = false;
+    }
   }, [ticker, period]);
 
   useEffect(() => {
