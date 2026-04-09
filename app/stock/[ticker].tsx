@@ -41,11 +41,8 @@ export default function StockDetailScreen() {
         const fxTicker = cur === 'KRW' ? null : `${cur}KRW=X`;
         let currentFxPrice = 1;
         if (fxTicker) {
-          try {
-            const fxRes = await fetch(`${VERCEL_API}/quote?symbols=${fxTicker}`);
-            const fxJson = await fxRes.json();
-            if (fxJson?.[fxTicker]?.price) currentFxPrice = fxJson[fxTicker].price;
-          } catch (e) { currentFxPrice = cur === 'USD' ? 1400 : (cur === 'JPY' ? 9.5 : 1); }
+          const fxData = await getTickerQuote(fxTicker, VERCEL_API, !isSilent);
+          if (fxData?.price) currentFxPrice = fxData.price;
         }
         setPriceData((prev: any) => {
           const next = { price: currentFxPrice, name: `${cur} Cash`, change_amount: 0, change_percent: 0, currency: 'KRW', last_updated: new Date().toISOString() };
@@ -63,10 +60,9 @@ export default function StockDetailScreen() {
         }
         setHistory([]);
       } else {
-        // 주식 (US/KR) 처리 (캐시 도입)
-        const quotePromise = getTickerQuote(ticker, VERCEL_API, !isSilent); // Silent 아닐 때만 강제 갱신 고려 (최초 로드 시)
+        // 단가(Quote)는 isSilent가 아닐 때(새로고침 등)만 forceRefresh, 그 외엔 5분 캐시 활용
+        const quotePromise = getTickerQuote(ticker, VERCEL_API, false);
         const historyPromise = getStockHistory(ticker, period, VERCEL_API);
-
         const [quoteData, histJson] = await Promise.all([quotePromise, historyPromise]);
 
         if (quoteData) {
@@ -83,11 +79,9 @@ export default function StockDetailScreen() {
         }
       }
 
-      // 보유 여부 확인 (24시간 캐시 활용)
       if (!isSilent) {
         const hData = await getHoldings();
-        const myPositions = hData.filter(h => h.ticker === ticker);
-        setHoldings(myPositions);
+        setHoldings(hData.filter(h => h.ticker === ticker));
       }
     } catch (e) {
       console.error(e);
