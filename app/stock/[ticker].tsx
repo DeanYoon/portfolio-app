@@ -34,25 +34,21 @@ export default function StockDetailScreen() {
   const ticker = encodedTicker ? decodeURIComponent(encodedTicker) : '';
   const insets = useSafeAreaInsets();
   
-  const [priceData, setPriceData] = useState<PriceData | null>(null);
-  const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [holdings, setHoldings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState('6mo');
+  const isFetchingRef = useRef(false);
 
-  const fetchStockData = useCallback(async () => {
-    if (!ticker) return;
-    setLoading(true);
+  const fetchStockData = useCallback(async (isSilent = false) => {
+    if (!ticker || isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
+    if (!isSilent) setLoading(true);
 
     try {
       const isJp = isJapaneseFund(ticker);
       const isCash = ticker.startsWith('CASH_');
 
       if (isCash) {
-        // 현금 자산 처리
+        // ... 기존 CASH 로직 ...
         const cur = ticker.split('_')[1] || 'USD';
-        // 환율 정보 가져오기 (Yahoo Finance 연동)
         const fxTicker = cur === 'KRW' ? null : `${cur}KRW=X`;
         let currentFxPrice = 1;
 
@@ -60,47 +56,42 @@ export default function StockDetailScreen() {
           try {
             const fxRes = await fetch(`${VERCEL_API}/quote?symbols=${fxTicker}`);
             const fxJson = await fxRes.json();
-            if (fxJson?.[fxTicker]?.price) {
-              currentFxPrice = fxJson[fxTicker].price;
-            }
-          } catch (e) {
-            console.error('FX fetch error:', e);
-            // 실패 시 기본값 (기존 캐시 등 활용 가능하지만 여기선 fallback)
-            currentFxPrice = cur === 'USD' ? 1400 : (cur === 'JPY' ? 9.5 : 1);
-          }
+            if (fxJson?.[fxTicker]?.price) currentFxPrice = fxJson[fxTicker].price;
+          } catch (e) { currentFxPrice = cur === 'USD' ? 1400 : (cur === 'JPY' ? 9.5 : 1); }
         }
 
-        setPriceData({
-          price: currentFxPrice,
-          name: `${cur} Cash`,
-          change_amount: 0,
-          change_percent: 0,
-          currency: 'KRW', // 현금 자산의 상세페이지 가치는 원화 환산가로 표시
-          last_updated: new Date().toISOString(),
+        setPriceData(prev => {
+          const next = {
+            price: currentFxPrice,
+            name: `${cur} Cash`,
+            change_amount: 0,
+            change_percent: 0,
+            currency: 'KRW',
+            last_updated: new Date().toISOString(),
+          };
+          return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
         });
         setHistory([]);
       } else if (isJp) {
-        // 일본 펀드 처리
-        const { data: fundData } = await supabase
-          .from('japan_funds')
-          .select('*')
-          .eq('fcode', ticker)
-          .single();
-
+        // ... 일본 펀드 로직 ...
+        const { data: fundData } = await supabase.from('japan_funds').select('*').eq('fcode', ticker).single();
         if (fundData?.price_data) {
           const pd = fundData.price_data;
-          setPriceData({
-            price: pd.price,
-            name: pd.name || ticker,
-            change_amount: pd.change_amount || 0,
-            change_percent: pd.change_percent || 0,
-            currency: 'JPY',
-            last_updated: pd.last_updated || new Date().toISOString(),
+          setPriceData(prev => {
+            const next = {
+              price: pd.price,
+              name: pd.name || ticker,
+              change_amount: pd.change_amount || 0,
+              change_percent: pd.change_percent || 0,
+              currency: 'JPY',
+              last_updated: pd.last_updated || new Date().toISOString(),
+            };
+            return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
           });
         }
         setHistory([]);
       } else {
-        // 주식 (US/KR) 처리
+        // ... 주식 (US/KR) 로직 ...
         const [quoteRes, historyRes] = await Promise.all([
           fetch(`${VERCEL_API}/quote?symbols=${ticker}`).catch(() => null),
           fetch(`${VERCEL_API}/history?symbols=${ticker}&period=${period}`).catch(() => null),
@@ -110,13 +101,17 @@ export default function StockDetailScreen() {
           const quoteJson = await quoteRes.json();
           const q = quoteJson?.[ticker];
           if (q?.price) {
-            setPriceData({
-              price: q.price,
-              name: q.name || q.symbol || ticker,
-              change_amount: q.change || 0,
-              change_percent: q.changePercent || 0,
-              currency: q.currency || 'USD',
-              last_updated: new Date().toISOString(),
+            setPriceData(prev => {
+              const next = {
+                price: q.price,
+                name: q.name || q.symbol || ticker,
+                change_amount: q.change || 0,
+                change_percent: q.changePercent || 0,
+                currency: q.currency || 'USD',
+                last_updated: new Date().toISOString(),
+              };
+              // 깊은 비교로 불필요한 리렌더링 및 무한 루프 방지
+              return (prev?.price === next.price && prev?.change_amount === next.change_amount) ? prev : next;
             });
           }
         }
@@ -129,50 +124,38 @@ export default function StockDetailScreen() {
               .map(([date, bar]: [string, any]) => ({ date, close: bar.close }))
               .filter((b: any) => b.close != null)
               .sort((a, b) => a.date.localeCompare(b.date));
-            setHistory(points);
+            setHistory(prev => JSON.stringify(prev) === JSON.stringify(points) ? prev : points);
           }
         }
       }
 
-      // 보유 여부 확인 (항상 실행)
-      const { data: user } = await supabase.auth.getUser();
-      if (user?.user) {
-        const { data: hData } = await supabase
-          .from('holdings')
-          .select('*, portfolios(name)')
-          .eq('ticker', ticker);
-        setHoldings(hData || []);
+      // 보유 여부 확인 (최초 1회 또는 강제 갱신 시에만)
+      if (!isSilent) {
+        const { data: user } = await supabase.auth.getUser();
+        if (user?.user) {
+          const { data: hData } = await supabase.from('holdings').select('*, portfolios(name)').eq('ticker', ticker);
+          setHoldings(hData || []);
+        }
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error('Error fetching stock detail:', e);
-      // 에러 발생 시에도 최소한의 이름 정보 표시
-      if (!priceData) {
-        setPriceData({
-          price: 0,
-          name: ticker,
-          change_amount: 0,
-          change_percent: 0,
-          currency: 'USD',
-          last_updated: new Date().toISOString(),
-          error: '데이터를 가져올 수 없습니다.'
-        });
-      }
     } finally {
       setLoading(false);
       setRefreshing(false);
+      isFetchingRef.current = false;
     }
-  }, [ticker, period, priceData]);
-
+  }, [ticker, period]);
 
   useEffect(() => {
     fetchStockData();
     
-    // 5초마다 자동 갱신 (실시간성 유지하면서 서버 부하 감소)
     const interval = setInterval(() => {
-      fetchStockData();
+      fetchStockData(true); // 배경 업데이트
     }, 5000);
 
     return () => clearInterval(interval);
+  }, [fetchStockData]);
+
   }, [fetchStockData]);
 
   // Set page title for web
