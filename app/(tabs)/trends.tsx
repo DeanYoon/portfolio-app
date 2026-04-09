@@ -224,20 +224,30 @@ export default function TrendsScreen() {
           </View>
         </ErrorBoundary>
       </ScrollView>
-
+      {/* Portfolio Selector Modal */}
       <Modal visible={showPicker} transparent animationType="fade" onRequestClose={() => setShowPicker(false)}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowPicker(false)}>
-          <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 16 }}>계좌 선택</Text>
-            {portfolios.map(p => (
-              <TouchableOpacity key={p.id} onPress={() => setSelectedId(String(p.id))} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: String(p.id) === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
-                {String(p.id) === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
-              </TouchableOpacity>
-            ))}
-          </View>
+        <TouchableOpacity 
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} 
+          activeOpacity={1} 
+          onPress={() => setShowPicker(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
+            <ScrollView>
+              {portfolios.map(p => (
+                <TouchableOpacity key={p.id} onPress={async () => { await setSelectedPortfolioIdShared(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: p.id === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
+                  {p.id === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setShowPicker(false)} style={{ paddingVertical: 16, alignItems: 'center' }}><Text style={{ fontSize: 14, fontWeight: '700', color: '#52525b' }}>닫기</Text></TouchableOpacity>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
-    </View>
+
   );
 }
