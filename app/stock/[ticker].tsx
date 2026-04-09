@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide-react-native';
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
+import { getStockHistory } from '@/src/utils/history-cache';
 import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -60,13 +61,13 @@ export default function StockDetailScreen() {
         }
         setHistory([]);
       } else {
-        const [quoteRes, historyRes] = await Promise.all([
-          fetch(`${VERCEL_API}/quote?symbols=${ticker}`).catch(() => null),
-          fetch(`${VERCEL_API}/history?symbols=${ticker}&period=${period}`).catch(() => null)
-        ]);
-        if (quoteRes?.ok) {
-          const quoteJson = await quoteRes.json();
-          const q = quoteJson?.[ticker];
+        const quotePromise = fetch(`${VERCEL_API}/quote?symbols=${ticker}`).then(r => r.json()).catch(() => null);
+        const historyPromise = getStockHistory(ticker, period, VERCEL_API);
+
+        const [quoteJson, histJson] = await Promise.all([quotePromise, historyPromise]);
+
+        if (quoteJson?.[ticker]) {
+          const q = quoteJson[ticker];
           if (q?.price) {
             setPriceData((prev: any) => {
               const next = { price: q.price, name: q.name || q.symbol || ticker, change_amount: q.change || 0, change_percent: q.changePercent || 0, currency: q.currency || 'USD', last_updated: new Date().toISOString() };
@@ -74,10 +75,8 @@ export default function StockDetailScreen() {
             });
           }
         }
-        if (historyRes?.ok) {
-          const histJson = await historyRes.json();
-          if (histJson?.[ticker]) {
-            const entries = Object.entries(histJson[ticker]);
+        if (histJson?.[ticker]) {
+          const entries = Object.entries(histJson[ticker]);
             const points = entries.map(([date, bar]: [string, any]) => ({ date, close: bar.close })).filter((b: any) => b.close != null).sort((a: any, b: any) => a.date.localeCompare(b.date));
             setHistory((prev: any) => JSON.stringify(prev) === JSON.stringify(points) ? prev : points);
           }
