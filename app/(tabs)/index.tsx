@@ -313,7 +313,16 @@ export default function DashboardScreen() {
         {processed.map(p => (
           <View key={p.id} style={{ marginBottom: 16 }}>
             {p.rows.map((h: any) => (
-              <TouchableOpacity key={h.id} onPress={() => { router.push(`/stock/${h.ticker}`); }} onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }} delayLongPress={500} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}>
+                <TouchableOpacity
+                  key={h.id}
+                  onPress={() => { 
+                    if (h.ticker === 'CASH_KRW') return;
+                    router.push(`/stock/${h.ticker}`); 
+                  }}
+                  onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
+                  delayLongPress={500}
+                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
+                >
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                   <Text style={{ fontSize: 20, marginRight: 10 }}>{h.flag}</Text>
                   <View style={{ flex: 1 }}>
