@@ -18,7 +18,12 @@ import HoldingModal from '@/src/components/holding-modal';
 
 // ─── Types ───
 interface Portfolio {
-  id: string; name: string; description?: string; user_id: string; holdings: Holding[];
+  id: string; 
+  name: string; 
+  description?: string; 
+  user_id: string; 
+  holdings: Holding[];
+  avg_usd_krw_rate?: number;
 }
 interface Holding {
   id: string; ticker: string; name: string; quantity: number; avg_price: number;
@@ -196,17 +201,29 @@ export default function DashboardScreen() {
 
     const result = activePortfolios.map(p => {
       let pT = 0, pI = 0, pD = 0;
+      // Portfolio-level constant buy rate for USD
+      const buyRate = p.avg_usd_krw_rate || usdkrw; 
+
       const rows = p.holdings.map(h => {
         const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
-        const rate = h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1;
+        const currentRate = h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1;
         const isJp = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker);
         const isCash = h.ticker.startsWith('CASH_');
         const qty = isJp ? h.quantity / 10000 : h.quantity;
-        const vL = qty * cp; const iL = qty * (isCash ? cp : h.avg_price);
-        const vK = vL * rate; const iK = iL * rate; 
-        const dK = (mi?.change_amount || 0) * qty * rate;
         
-        // 오늘 수익률 계산 보정: (오늘 변동액) / (어제 종가 기준 총 자산)
+        const vL = qty * cp; 
+        const iL = qty * (isCash ? cp : h.avg_price);
+        
+        // --- 🛡️ 정확한 수익률 계산 (2번 방식: 포트폴리오 기준 환율 적용) ---
+        const vK = vL * currentRate;  // 현재 가치 (현재 환율)
+        const iK = iL * (h.currency === 'USD' ? buyRate : currentRate); // 매수 금액 (매수 시점 환율 적용)
+        
+        const dK = (mi?.change_amount || 0) * qty * currentRate;
+        
+        // 수익률: (현재가치 - 매수금액) / 매수금액
+        // 환율 변동이 반영된 실제 수익률입니다.
+        const effectiveProfitRate = isCash ? 0 : (iK > 0 ? ((vK - iK) / iK) * 100 : 0);
+
         const dayChangePct = (mi?.price && mi?.change_amount) 
           ? (mi.change_amount / (mi.price - mi.change_amount)) * 100 
           : 0;
@@ -215,13 +232,14 @@ export default function DashboardScreen() {
         if (h.currency === 'USD') { uV += vK; uP += (vK - iK); }
         else if (h.currency === 'JPY') { jV += vK; jP += (vK - iK); }
         else { kV += vK; kP += (vK - iK); }
+
         return { 
           ...h, 
           currentPrice: cp, 
           valueKRW: vK, 
           valueLocal: vL, 
           profitValueKRW: vK - iK, 
-          profitRate: isCash ? 0 : ((cp - h.avg_price) / h.avg_price) * 100, 
+          profitRate: effectiveProfitRate, 
           dayChangeKRW: dK, 
           dayChangePercent: isCash ? 0 : dayChangePct, 
           displayName: mi?.name || h.name || h.ticker, 
