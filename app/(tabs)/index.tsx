@@ -109,6 +109,7 @@ export default function DashboardScreen() {
   const [isTodayMode, setIsTodayMode] = useState(false);
   const [isLocalCurrency, setIsLocalCurrency] = useState(false);
   const [showExchangeRateModal, setShowExchangeRateModal] = useState(false);
+  const [exchangeRateValue, setExchangeRateValue] = useState('');
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [editHolding, setEditHolding] = useState<any>(null);
   const isFetchingRef = useRef(false);
@@ -307,7 +308,11 @@ export default function DashboardScreen() {
 
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
           <TouchableOpacity 
-            onPress={() => setShowExchangeRateModal(true)}
+            onPress={() => {
+              const activePortfolio = portfolios.find(p => String(p.id) === (selectedId || String(portfolios[0]?.id)));
+              setExchangeRateValue(String(activePortfolio?.avg_usd_krw_rate || ""));
+              setShowExchangeRateModal(true);
+            }}
             style={{ flex: 1, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' }}
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -409,8 +414,15 @@ export default function DashboardScreen() {
 
       {/* 환율 설정 모달 */}
       <Modal visible={showExchangeRateModal} transparent animationType="slide" onRequestClose={() => setShowExchangeRateModal(false)}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }} activeOpacity={1} onPress={() => setShowExchangeRateModal(false)}>
-          <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#27272a' }} onStartShouldSetResponder={() => true}>
+        <TouchableOpacity 
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }} 
+          activeOpacity={1} 
+          onPress={() => setShowExchangeRateModal(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#27272a' }}
+          >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <Text style={{ fontSize: 18, fontWeight: '900', color: '#f4f4f5' }}>평균 매수 환율 설정 커스텀</Text>
               <TouchableOpacity onPress={() => setShowExchangeRateModal(false)}><X size={20} color="#71717a" /></TouchableOpacity>
@@ -429,31 +441,37 @@ export default function DashboardScreen() {
                 autoFocus
                 placeholder="1400.00"
                 placeholderTextColor="#27272a"
-                defaultValue={String(portfolios.find(p => String(p.id) === (selectedId || String(portfolios[0]?.id)))?.avg_usd_krw_rate || "")}
-                onSubmitEditing={async (e) => {
-                  const val = parseFloat(e.nativeEvent.text);
-                  const activeId = selectedId || String(portfolios[0]?.id);
-                  if (!isNaN(val) && activeId) {
-                    const { error } = await supabase.from('portfolios').update({ avg_usd_krw_rate: val }).eq('id', activeId);
-                    if (!error) {
-                      loadDashboard(true);
-                      setShowExchangeRateModal(false);
-                    } else {
-                      Alert.alert("오류", "환율 저장에 실패했습니다.");
-                    }
-                  }
-                }}
+                value={exchangeRateValue}
+                onChangeText={setExchangeRateValue}
               />
-              <Text style={{ fontSize: 11, color: '#3f3f46', marginTop: 12, textAlign: 'center' }}>엔터 키를 누르면 저장되고 즉시 반영됩니다.</Text>
             </View>
 
             <TouchableOpacity 
-              onPress={() => setShowExchangeRateModal(false)}
-              style={{ marginTop: 24, paddingVertical: 16, backgroundColor: '#27272a', borderRadius: 12, alignItems: 'center' }}
+              onPress={async () => {
+                const val = parseFloat(exchangeRateValue);
+                const activeId = selectedId || String(portfolios[0]?.id);
+                if (!isNaN(val) && activeId) {
+                  const { error } = await supabase.from('portfolios').update({ avg_usd_krw_rate: val }).eq('id', activeId);
+                  if (!error) {
+                    loadDashboard(true);
+                    setShowExchangeRateModal(false);
+                  } else {
+                    Alert.alert("오류", "환율 저장에 실패했습니다.");
+                  }
+                }
+              }}
+              style={{ marginTop: 24, paddingVertical: 18, backgroundColor: '#22c55e', borderRadius: 12, alignItems: 'center', shadowColor: '#22c55e', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 }}
             >
-              <Text style={{ fontSize: 14, fontWeight: '700', color: '#e4e4e7' }}>취소</Text>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: '#052e16' }}>설정 반영하기</Text>
             </TouchableOpacity>
-          </View>
+
+            <TouchableOpacity 
+              onPress={() => setShowExchangeRateModal(false)}
+              style={{ marginTop: 12, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#52525b' }}>취소</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
