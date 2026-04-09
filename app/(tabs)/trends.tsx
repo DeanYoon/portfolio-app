@@ -248,6 +248,6 @@ export default function TrendsScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
-
+    </View>
   );
 }
