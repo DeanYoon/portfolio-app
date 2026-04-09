@@ -119,10 +119,10 @@ export default function TrendsScreen() {
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [showPicker, setShowPicker] = useState(false);
-  const isFetchingRef = useRef(false);
+  const [selectedId, setSelectedIdLocal] = useState<string>('');
 
   const setSelectedId = async (id: string) => {
-    setSelectedIdLocal(id); await setSelectedPortfolioId(id === 'ALL' ? null : id); setShowPicker(false);
+    setSelectedIdLocal(id); await setSelectedPortfolioId(id); setShowPicker(false);
   };
 
   const loadTrends = useCallback(async (forceRefresh = false) => {
@@ -151,8 +151,8 @@ export default function TrendsScreen() {
   }, [session]);
 
   const allocationData = useMemo(() => {
-    // portfolio_id 비교 시 타입을 통일 (String)
-    const filtered = selectedId === 'ALL' 
+    // selectedId가 없을 경우를 대비한 방어 로직 추가
+    const filtered = !selectedId 
       ? holdings 
       : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
 
@@ -190,7 +190,8 @@ export default function TrendsScreen() {
   }, [holdings, priceMap, selectedId]);
 
   const allHistory = useMemo(() => {
-    const filtered = selectedId === 'ALL' ? rawSnapshots : rawSnapshots.filter(s => s.portfolio_id === selectedId);
+    // selectedId 필터링 로직 수정
+    const filtered = !selectedId ? rawSnapshots : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
     const grouped = filtered.reduce((acc: any, curr) => {
       const d = new Date(curr.snapshot_date); if (curr.snapshot_date.includes('T00:00:00')) d.setMinutes(d.getMinutes()-1);
       const date = d.toISOString().split('T')[0]; acc[date] = (acc[date] || 0) + Number(curr.total_value_krw); return acc;
@@ -208,7 +209,7 @@ export default function TrendsScreen() {
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
   }, [allHistory, period]);
 
-  useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { setSelectedIdLocal(s || 'ALL'); loadTrends(); }); }, [loadTrends]));
+  useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s) setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
   if (authLoading || (dataLoading && holdings.length === 0)) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
   const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max-min)*0.1 || min*0.1; return [Math.max(0, min-pad), max+pad]; })() : [0, 100];
@@ -218,7 +219,7 @@ export default function TrendsScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{selectedId === 'ALL' ? '전체 계좌' : portfolios.find(p => p.id === selectedId)?.name?.substring(0,10) || '계좌'}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{portfolios.find(p => p.id === selectedId)?.name?.substring(0,10) || '계좌 선택'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', backgroundColor: '#18181b', borderRadius: 8, padding: 4 }}>
@@ -254,9 +255,6 @@ export default function TrendsScreen() {
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowPicker(false)}>
           <View style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }} onStartShouldSetResponder={() => true}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 16 }}>계좌 선택</Text>
-            <TouchableOpacity onPress={() => setSelectedId('ALL')} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: selectedId === 'ALL' ? '#22c55e' : '#e4e4e7' }}>전체 계좌 보기</Text>
-            </TouchableOpacity>
             {portfolios.map(p => (
               <TouchableOpacity key={p.id} onPress={() => setSelectedId(String(p.id))} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: String(p.id) === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
