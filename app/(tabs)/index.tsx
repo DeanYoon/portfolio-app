@@ -37,8 +37,88 @@ interface PriceData {
 
 type SortType = 'value' | 'profit' | 'name' | 'rate';
 
-// ─── API Configuration ───
+// ─── Constants ───
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
+
+// ─── Skeleton Component ───
+const Skeleton = ({ width, height, borderRadius = 8, marginBottom = 0, style = {} }: any) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: '#27272a',
+          borderRadius,
+          marginBottom,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+const DashboardSkeleton = ({ insets }: { insets: any }) => (
+  <View style={{ flex: 1, backgroundColor: '#09090b', paddingHorizontal: 16, paddingTop: insets.top + 60 }}>
+    <Skeleton width={100} height={12} marginBottom={12} />
+    <Skeleton width={220} height={40} marginBottom={24} />
+    
+    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+      <Skeleton width="48.5%" height={80} borderRadius={16} />
+      <Skeleton width="48.5%" height={80} borderRadius={16} />
+    </View>
+
+    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+      <Skeleton width="48.5%" height={50} borderRadius={12} />
+      <Skeleton width="48.5%" height={50} borderRadius={12} />
+    </View>
+
+    <Skeleton width="100%" height={70} borderRadius={16} marginBottom={24} />
+
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+      <Skeleton width={120} height={12} />
+      <Skeleton width={80} height={24} borderRadius={8} />
+    </View>
+
+    {[1, 2, 3, 4, 5].map((i) => (
+      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <Skeleton width={32} height={32} borderRadius={16} style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Skeleton width="60%" height={14} marginBottom={6} />
+            <Skeleton width="40%" height={10} />
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Skeleton width={80} height={14} marginBottom={6} />
+          <Skeleton width={60} height={10} />
+        </View>
+      </View>
+    ))}
+  </View>
+);
 
 const isJapaneseFund = (ticker: string) => /^[0-9A-Z]{8}$/i.test(ticker);
 
@@ -281,7 +361,7 @@ export default function DashboardScreen() {
     };
   }, [portfolios, selectedId, priceMap, usdkrw, jpykrw, sortBy]);
 
-  if (authLoading || (dataLoading && portfolios.length === 0)) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  if (authLoading || (dataLoading && portfolios.length === 0)) return <DashboardSkeleton insets={insets} />;
 
   const { processed, totals, exitSimulation } = processedData;
   const tp = totals.gProfit >= 0; const dp = totals.gD >= 0;
