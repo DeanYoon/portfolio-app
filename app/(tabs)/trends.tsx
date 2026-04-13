@@ -70,7 +70,7 @@ const TrendsSkeleton = ({ insets }: { insets: any }) => (
     <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
       <Skeleton width={80} height={10} marginBottom={12} />
       <Skeleton width={200} height={32} marginBottom={20} />
-      <Skeleton width=\"100%\" height={200} borderRadius={12} />
+      <Skeleton width="100%" height={200} borderRadius={12} />
     </View>
 
     <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#27272a' }}>
