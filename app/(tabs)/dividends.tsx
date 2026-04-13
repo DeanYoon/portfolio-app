@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, StyleSheet, Modal, RefreshControl, Animated, Easing } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -13,6 +13,108 @@ import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, Trend
 import { endOfMonth, isPast, isSameMonth, parseISO } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ─── Skeleton Component ───
+const Skeleton = ({ width, height, borderRadius = 8, marginBottom = 0, style = {} }: any) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: '#27272a',
+          borderRadius,
+          marginBottom,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+const DividendSkeleton = ({ insets }: { insets: any }) => (
+  <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
+    {/* Portfolio selector skeleton */}
+    <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
+      <Skeleton width={80} height={36} borderRadius={10} />
+    </View>
+
+    <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}>
+      {/* Controls skeleton */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+        <Skeleton width={100} height={34} borderRadius={20} />
+        <Skeleton width={100} height={34} borderRadius={20} style={{ marginLeft: 'auto' }} />
+      </View>
+
+      {/* Chart skeleton */}
+      <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+          <View>
+            <Skeleton width={120} height={16} marginBottom={6} />
+            <Skeleton width={80} height={10} />
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 170, justifyContent: 'space-between' }}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+            <Skeleton key={i} width="6%" height={`${Math.random() * 60 + 20}%`} borderRadius={4} />
+          ))}
+        </View>
+      </View>
+
+      {/* Summary skeleton */}
+      <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#27272a', marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Skeleton width={100} height={10} />
+          <Skeleton width={40} height={18} borderRadius={6} />
+        </View>
+        <Skeleton width="70%" height={48} marginBottom={8} />
+        <Skeleton width="50%" height={10} />
+      </View>
+
+      {/* List headers */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Skeleton width={100} height={12} />
+        <Skeleton width={40} height={12} />
+      </View>
+
+      {/* Stock items skeleton */}
+      {[1, 2, 3].map((i) => (
+        <View key={i} style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#27272a', marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Skeleton width="60%" height={18} marginBottom={6} />
+              <Skeleton width="40%" height={12} />
+            </View>
+            <Skeleton width={100} height={20} />
+          </View>
+          <Skeleton width="100%" height={80} borderRadius={12} />
+        </View>
+      ))}
+    </ScrollView>
+  </View>
+);
 const VERCEL_API = process.env.EXPO_PUBLIC_YAHOO_API || 'https://yahoo-finance-api-seven.vercel.app';
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
@@ -295,7 +397,7 @@ export default function DividendsScreen() {
   const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
 
   if (dataLoading && !stockDividends.length) {
-    return <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /><Text style={{ color: '#71717a', marginTop: 12, fontSize: 13, fontWeight: '700' }}>배당 데이터를 불러오는 중...</Text></View>;
+    return <DividendSkeleton insets={insets} />;
   }
 
   return (

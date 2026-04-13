@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState, AppStateStatus, Modal } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState, AppStateStatus, Modal, Animated, Easing } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/hooks/useAuth';
@@ -19,6 +19,68 @@ const PAD_TOP = 12;
 const PAD_BOTTOM = 28;
 
 const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+// ─── Skeleton Component ───
+const Skeleton = ({ width, height, borderRadius = 8, marginBottom = 0, style = {} }: any) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: '#27272a',
+          borderRadius,
+          marginBottom,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+const TrendsSkeleton = ({ insets }: { insets: any }) => (
+  <View style={{ flex: 1, backgroundColor: '#09090b', paddingHorizontal: 16, paddingTop: insets.top + 12 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+      <Skeleton width={120} height={40} borderRadius={10} />
+      <Skeleton width={150} height={40} borderRadius={10} />
+    </View>
+    
+    <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
+      <Skeleton width={80} height={10} marginBottom={12} />
+      <Skeleton width={200} height={32} marginBottom={20} />
+      <Skeleton width=\"100%\" height={200} borderRadius={12} />
+    </View>
+
+    <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#27272a' }}>
+      <Skeleton width={120} height={16} marginBottom={20} />
+      <View style={{ alignItems: 'center' }}>
+        <Skeleton width={220} height={220} borderRadius={110} />
+      </View>
+    </View>
+  </View>
+);
 
 function AllocationPie({ data, total }: { data: any[], total: number }) {
   const radius = 100; const innerRadius = 75; const centerX = 150; const centerY = 150;
@@ -182,10 +244,10 @@ export default function TrendsScreen() {
     const filtered = period === 'ALL' ? allHistory : allHistory.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
   }, [allHistory, period]);
-
+  
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s) setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
-  if (authLoading || (dataLoading && holdings.length === 0)) return <View style={{ flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#22c55e" /></View>;
+  if (authLoading || (dataLoading && holdings.length === 0)) return <TrendsSkeleton insets={insets} />;
   const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max-min)*0.1 || min*0.1; return [Math.max(0, min-pad), max+pad]; })() : [0, 100];
   const lastVal = chartData[chartData.length-1]?.y || 0; const firstVal = chartData[0]?.y || 0; const diff = lastVal - firstVal;
   
