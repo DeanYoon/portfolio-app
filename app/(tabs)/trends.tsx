@@ -232,11 +232,9 @@ export default function TrendsScreen() {
       const d = new Date(curr.snapshot_date); if (curr.snapshot_date.includes('T00:00:00')) d.setMinutes(d.getMinutes()-1);
       const date = d.toISOString().split('T')[0]; acc[date] = (acc[date] || 0) + Number(curr.total_value_krw); return acc;
     }, {});
-    const todayStr = new Date().toISOString().split('T')[0]; delete grouped[todayStr];
     const fmt = Object.entries(grouped).map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number })).sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date));
-    if (allocationData.total > 0) fmt.push({ snapshot_date: todayStr, total_value_krw: allocationData.total });
     return fmt;
-  }, [rawSnapshots, selectedId, allocationData.total]);
+  }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
     const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate()-7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth()-1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth()-3);
