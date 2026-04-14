@@ -131,10 +131,22 @@ function AllocationPie({ data, total }: { data: any[], total: number }) {
 
 function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void }) {
   const innerW = containerW - PAD_LEFT - PAD_RIGHT; const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  const sx = (i: number) => (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW + PAD_LEFT);
+  
+  // Time-scale X-Axis: Calculate X position based on date ratio
+  const getX = (date: Date) => {
+    if (data.length <= 1) return PAD_LEFT + innerW / 2;
+    const first = data[0].x.getTime();
+    const last = data[data.length - 1].x.getTime();
+    const range = last - first || 1;
+    return PAD_LEFT + ((date.getTime() - first) / range) * innerW;
+  };
+
   const sy = (v: number) => (yDomain[1] === yDomain[0] ? PAD_TOP + innerH / 2 : PAD_TOP + innerH - ((v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH);
-  const lineD = data.length > 1 ? data.map((d, i) => `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(d.y).toFixed(1)}`).join(' ') : '';
-  const areaD = data.length > 1 ? lineD + ` L${sx(data.length - 1).toFixed(1)},${PAD_TOP + innerH} L${sx(0).toFixed(1)},${PAD_TOP + innerH} Z` : '';
+  
+  const linePoints = data.map((d) => ({ x: getX(d.x), y: sy(d.y) }));
+  const lineD = linePoints.length > 1 ? linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') : '';
+  const areaD = linePoints.length > 1 ? lineD + ` L${linePoints[linePoints.length - 1].x.toFixed(1)},${PAD_TOP + innerH} L${linePoints[0].x.toFixed(1)},${PAD_TOP + innerH} Z` : '';
+  
   const colorPositive = data.length > 1 && data[data.length - 1].y >= data[0].y ? '#22c55e' : '#3b82f6';
   const gridLines: any[] = [];
   for (let i = 0; i <= 3; i++) {
@@ -145,24 +157,37 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
     if (activeIndices.length === 0 || data.length === 0) return null;
     const shortDate = (ds: string) => ds.split('T')[0].slice(2).replace(/-/g, '.');
     if (activeIndices.length === 1) {
-      const d = data[activeIndices[0]]; return { x: sx(activeIndices[0]), y: sy(d.y), lines: [shortDate(d.datum.snapshot_date), formatCurrency(d.y)], highlight: null, crosshairX: sx(activeIndices[0]) };
+      const d = data[activeIndices[0]]; return { x: getX(d.x), y: sy(d.y), lines: [shortDate(d.datum.snapshot_date), formatCurrency(d.y)], highlight: null, crosshairX: getX(d.x) };
     }
     const idxS = Math.min(...activeIndices); const idxE = Math.max(...activeIndices); const s = data[idxS]; const e = data[idxE];
     const diff = e.y - s.y; const roi = s.y > 0 ? (diff / s.y) * 100 : 0;
-    return { x: (sx(idxS) + sx(idxE)) / 2, y: Math.min(sy(s.y), sy(e.y)), lines: [`${shortDate(s.datum.snapshot_date)} ~ ${shortDate(e.datum.snapshot_date)}`, `${diff >= 0 ? '+' : ''}${formatCurrency(diff)} (${roi.toFixed(2)}%)`], highlight: { x1: sx(idxS), x2: sx(idxE) }, crosshairX: null };
+    return { x: (getX(s.x) + getX(e.x)) / 2, y: Math.min(sy(s.y), sy(e.y)), lines: [`${shortDate(s.datum.snapshot_date)} ~ ${shortDate(e.datum.snapshot_date)}`, `${diff >= 0 ? '+' : ''}${formatCurrency(diff)} (${roi.toFixed(2)}%)`], highlight: { x1: getX(s.x), x2: getX(e.x) }, crosshairX: null };
   }, [activeIndices, data]);
 
   return (
-    <View style={{ position: 'relative' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => { const locX = e.nativeEvent.locationX; const ratio = (locX - PAD_LEFT) / innerW; const idx = Math.max(0, Math.min(data.length - 1, Math.round(ratio * (data.length - 1)))); if (!isNaN(idx)) onHit(idx); }} onResponderRelease={onRelease} onResponderTerminate={onRelease}>
+    <View style={{ position: 'relative' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => { 
+      const locX = e.nativeEvent.locationX; 
+      // Find closest data point index based on X position
+      let closestIdx = 0;
+      let minDiff = Infinity;
+      data.forEach((d, i) => {
+        const diff = Math.abs(getX(d.x) - locX);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
+      });
+      onHit(closestIdx); 
+    }} onResponderRelease={onRelease} onResponderTerminate={onRelease}>
       <Svg width={containerW} height={CHART_H}>
         <Defs><LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" /><Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" /></LinearGradient></Defs>
         {gridLines}
         {areaD ? <Path d={areaD} fill="url(#areaGrad)" /> : null}
         {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
-        {data.length > 0 && [0, data.length - 1].map(i => <SvgText key={`x-${i}`} x={sx(i)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor={i === 0 ? "start" : "end"}>{data[i].datum.snapshot_date.split('T')[0].slice(2)}</SvgText>)}
+        {data.length > 0 && [0, data.length - 1].map(i => <SvgText key={`x-${i}`} x={getX(data[i].x)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor={i === 0 ? "start" : "end"}>{data[i].datum.snapshot_date.split('T')[0].slice(2)}</SvgText>)}
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
         {tooltipInfo?.crosshairX != null && <Line x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX} y1={PAD_TOP} y2={PAD_TOP + innerH} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />}
-        {activeIndices.map(idx => <Circle key={`a-${idx}`} cx={sx(idx)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />)}
+        {activeIndices.map(idx => <Circle key={`a-${idx}`} cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />)}
         {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 45); const tipW = 160; const tipH = 40; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[1].includes('(') ? (tooltipInfo.lines[1].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText></>); })()}</G>}
       </Svg>
     </View>
