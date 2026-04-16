@@ -254,8 +254,8 @@ export default function TrendsScreen() {
   const allHistory = useMemo(() => {
     const filtered = !selectedId ? rawSnapshots : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
     const grouped = filtered.reduce((acc: any, curr) => {
-      const d = new Date(curr.snapshot_date); if (curr.snapshot_date.includes('T00:00:00')) d.setMinutes(d.getMinutes()-1);
-      const date = d.toISOString().split('T')[0]; acc[date] = (acc[date] || 0) + Number(curr.total_value_krw); return acc;
+      const date = curr.snapshot_date.split('T')[0]; 
+      acc[date] = (acc[date] || 0) + Number(curr.total_value_krw); return acc;
     }, {});
     const fmt = Object.entries(grouped).map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number })).sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date));
     return fmt;
