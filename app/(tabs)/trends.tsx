@@ -313,6 +313,13 @@ export default function TrendsScreen() {
               <Text style={{ fontSize: 14, fontWeight: '800', color: diff >= 0 ? '#22c55e' : '#3b82f6', marginBottom: 4 }}>{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
             </View>
             <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} /></View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+              {(['1W', '1M', '3M', 'ALL'] as const).map((p) => (
+                <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </ErrorBoundary>
 
