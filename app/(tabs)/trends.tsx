@@ -281,23 +281,47 @@ export default function TrendsScreen() {
   }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
+    if (allHistory.length === 0) return [];
+
+    // 1. 모든 날짜를 포함한 1일 단위 시계열 생성 (통합 계좌일 때만)
+    let processedHistory = [...allHistory];
+    if (selectedId === 'ALL' || !selectedId) {
+      const historyMap = new Map(allHistory.map(h => [h.snapshot_date, h.total_value_krw]));
+      const startDate = new Date(allHistory[0].snapshot_date);
+      const endDate = new Date(allHistory[allHistory.length - 1].snapshot_date);
+      
+      const filledHistory: any[] = [];
+      let lastValue = allHistory[0].total_value_krw;
+      
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        if (historyMap.has(dateStr)) {
+          lastValue = historyMap.get(dateStr);
+          filledHistory.push({ snapshot_date: dateStr, total_value_krw: lastValue });
+        } else {
+          // 데이터 없는 날은 이전 값을 유지하여 데이터가 튀는 것(급격한 기울기 변화)을 방지
+          filledHistory.push({ snapshot_date: dateStr, total_value_krw: lastValue });
+        }
+      }
+      processedHistory = filledHistory;
+    }
+
     const today = new Date().toISOString().split('T')[0];
-    const historyWithToday = [...allHistory];
     
     // 오늘 자산 데이터를 마지막 데이터 포인트로 추가
-    if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date !== today) {
+    if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date !== today) {
       if (allocationData.total > 0) {
-          historyWithToday.push({ snapshot_date: today, total_value_krw: allocationData.total });
+          processedHistory.push({ snapshot_date: today, total_value_krw: allocationData.total });
       }
-    } else if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date === today) {
-       historyWithToday[historyWithToday.length - 1].total_value_krw = allocationData.total;
+    } else if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date === today) {
+       processedHistory[processedHistory.length - 1].total_value_krw = allocationData.total;
     }
 
     const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate()-7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth()-1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth()-3);
     const cutoffStr = cutoff.toISOString().split('T')[0];
-    const filtered = period === 'ALL' ? historyWithToday : historyWithToday.filter(s => s.snapshot_date >= cutoffStr);
+    const filtered = period === 'ALL' ? processedHistory : processedHistory.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
-  }, [allHistory, period, allocationData.total]);
+  }, [allHistory, period, allocationData.total, selectedId]);
   
   const onRefresh = useCallback(() => {
     loadTrends(true);
