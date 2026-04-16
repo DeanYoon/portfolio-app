@@ -265,19 +265,23 @@ export default function TrendsScreen() {
   }, [holdings, priceMap, selectedId]);
 
   const allHistory = useMemo(() => {
-    const filtered = selectedId === 'ALL' || !selectedId 
+    // rawSnapshots에서 모든 유효한 날짜 추출
+    const allDates = Array.from(new Set(rawSnapshots.map(s => s.snapshot_date.split('T')[0])));
+    
+    // 선택된 계좌별 데이터 필터링
+    const filteredSource = selectedId === 'ALL' || !selectedId 
         ? rawSnapshots 
         : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
+        
+    // 모든 날짜에 대해 해당 계좌(들)의 자산 합산
+    const dailyTotals = allDates.map(date => {
+      const val = filteredSource
+        .filter(s => s.snapshot_date.startsWith(date))
+        .reduce((sum, curr) => sum + Number(curr.total_value_krw), 0);
+      return { snapshot_date: date, total_value_krw: val };
+    });
     
-    const grouped = filtered.reduce((acc: any, curr) => {
-      const date = curr.snapshot_date.split('T')[0]; 
-      acc[date] = (acc[date] || 0) + Number(curr.total_value_krw); 
-      return acc;
-    }, {});
-    
-    return Object.entries(grouped)
-        .map(([date, val]) => ({ snapshot_date: date, total_value_krw: val as number }))
-        .sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    return dailyTotals.sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date));
   }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
