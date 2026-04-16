@@ -281,23 +281,53 @@ export default function TrendsScreen() {
   }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
+    if (allHistory.length === 0) return [];
+
+    let processedHistory = [...allHistory];
+    
+    // 통합 계좌(selectedId === 'ALL' || !selectedId)일 때 선형 보간 적용
+    if (selectedId === 'ALL' || !selectedId) {
+      const filled: any[] = [];
+      for (let i = 0; i < processedHistory.length - 1; i++) {
+        const current = processedHistory[i];
+        const next = processedHistory[i + 1];
+        filled.push(current);
+        const currDate = new Date(current.snapshot_date);
+        const nextDate = new Date(next.snapshot_date);
+        const dayDiff = Math.round((nextDate.getTime() - currDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (dayDiff > 1) {
+          for (let d = 1; d < dayDiff; d++) {
+            const intermediateDate = new Date(currDate.getTime() + d * 1000 * 60 * 60 * 24);
+            const ratio = d / dayDiff;
+            const interpolatedValue = current.total_value_krw + (next.total_value_krw - current.total_value_krw) * ratio;
+            filled.push({
+              snapshot_date: intermediateDate.toISOString().split('T')[0],
+              total_value_krw: Math.round(interpolatedValue)
+            });
+          }
+        }
+      }
+      filled.push(processedHistory[processedHistory.length - 1]);
+      processedHistory = filled;
+    }
+
     const today = new Date().toISOString().split('T')[0];
-    const historyWithToday = [...allHistory];
     
     // 오늘 자산 데이터를 마지막 데이터 포인트로 추가
-    if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date !== today) {
+    if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date !== today) {
       if (allocationData.total > 0) {
-          historyWithToday.push({ snapshot_date: today, total_value_krw: allocationData.total });
+          processedHistory.push({ snapshot_date: today, total_value_krw: allocationData.total });
       }
-    } else if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date === today) {
-       historyWithToday[historyWithToday.length - 1].total_value_krw = allocationData.total;
+    } else if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date === today) {
+       processedHistory[processedHistory.length - 1].total_value_krw = allocationData.total;
     }
 
     const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate()-7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth()-1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth()-3);
     const cutoffStr = cutoff.toISOString().split('T')[0];
-    const filtered = period === 'ALL' ? historyWithToday : historyWithToday.filter(s => s.snapshot_date >= cutoffStr);
+    const filtered = period === 'ALL' ? processedHistory : processedHistory.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
-  }, [allHistory, period, allocationData.total]);
+  }, [allHistory, period, allocationData.total, selectedId]);
   
   const onRefresh = useCallback(() => {
     loadTrends(true);
