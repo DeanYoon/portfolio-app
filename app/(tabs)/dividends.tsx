@@ -268,13 +268,18 @@ export default function DividendsScreen() {
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       const final = rawTickers.map((rawTicker: string) => {
-        const holding = holdings.find((h: any) => h.ticker === rawTicker);
-        const isJpFund = holding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
-        const quantity = holding?.quantity || 0;
-        const effectiveQty = isJpFund ? quantity / 10000 : quantity;
+        // 해당 티커를 보유한 모든 항목 합산 (통합 계좌 고려)
+        const relevantHoldings = holdings.filter((h: any) => h.ticker === rawTicker);
+        const firstHolding = relevantHoldings[0];
+        if (!firstHolding) return null;
+
+        const isJpFund = firstHolding?.country === 'JP' && (/^[0-9A-Z]{8}$/.test(rawTicker) || rawTicker === '9I312249');
+        // 통합 수량 계산
+        const totalQuantity = relevantHoldings.reduce((sum, h) => sum + (h.quantity || 0), 0);
+        const effectiveQty = isJpFund ? totalQuantity / 10000 : totalQuantity;
 
         let dividends: any[] = [];
-        let fetchedCurrency = holding?.currency || 'USD';
+        let fetchedCurrency = firstHolding?.currency || 'USD';
 
         if (isJpFund) {
           const fund = jpFundData.find((f: any) => f.fcode === rawTicker);
@@ -297,7 +302,7 @@ export default function DividendsScreen() {
 
         return {
           ticker: rawTicker,
-          name: holding?.name || rawTicker,
+          name: firstHolding?.name || rawTicker,
           quantity: effectiveQty,
           dividends: dividends.map((d: any) => ({
             date: d.date, amount: d.amount, close: d.close, 
@@ -307,7 +312,7 @@ export default function DividendsScreen() {
           totalDividends: dividends.reduce((s, d) => s + d.amount, 0),
           totalValueForHolding: dividends.reduce((s, d) => s + d.amount * effectiveQty, 0),
           currency: fetchedCurrency,
-          country: holding?.country || 'US',
+          country: firstHolding?.country || 'US',
         };
       }).filter(x => x !== null);
 
