@@ -408,8 +408,10 @@ export default function DividendsScreen() {
           <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
+        <TouchableOpacity onPress={onRefresh} style={{ padding: 8 }}>
+          <Text style={{ fontSize: 18 }}>🔄</Text>
+        </TouchableOpacity>
       </View>
-
       <ScrollView 
         contentContainerStyle={{ padding: 16, paddingTop: 8 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />}
