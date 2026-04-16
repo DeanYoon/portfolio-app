@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
 import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { getHoldings } from '@/src/utils/holdings-cache';
-import { Wallet, ArrowUpRight, ArrowDownRight, ChevronDown } from 'lucide-react-native';
+import { Wallet, ArrowUpRight, ArrowDownRight, ChevronDown, RefreshCw } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
 import { ErrorBoundary } from '@/src/components/error-boundary';
 
@@ -293,12 +293,10 @@ export default function TrendsScreen() {
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{portfolios.find(p => p.id === selectedId)?.name?.substring(0,10) || '계좌 선택'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
-        <View style={{ flexDirection: 'row', backgroundColor: '#18181b', borderRadius: 8, padding: 4 }}>
-          {['1W', '1M', '3M', 'ALL'].map((p: any) => (
-            <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+            <RefreshCw size={20} color="#e4e4e7" />
+          </TouchableOpacity>
         </View>
       </View>
 
