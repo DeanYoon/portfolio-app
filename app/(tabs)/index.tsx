@@ -393,7 +393,9 @@ export default function DashboardScreen() {
           <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
             <RefreshCw size={20} color="#e4e4e7" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}><Plus size={20} color="#052e16" /></TouchableOpacity>
+          <TouchableOpacity onPress={() => { if (selectedId === 'ALL') return; setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: selectedId === 'ALL' ? '#18181b' : '#22c55e', borderRadius: 8, opacity: selectedId === 'ALL' ? 0.5 : 1 }}>
+            <Plus size={20} color={selectedId === 'ALL' ? '#52525b' : '#052e16'} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -480,7 +482,14 @@ export default function DashboardScreen() {
                     if (h.ticker === 'CASH_KRW') return;
                     router.push(`/stock/${h.ticker}`); 
                   }}
-                  onLongPress={() => { setEditHolding(h); setShowHoldingModal(true); }}
+                  onLongPress={() => { 
+                    if (selectedId === 'ALL') {
+                      Alert.alert('알림', '통합 계좌 뷰에서는 개별 종목을 수정할 수 없습니다. 개별 계좌를 선택해 주세요.');
+                      return;
+                    }
+                    setEditHolding(h); 
+                    setShowHoldingModal(true); 
+                  }}
                   delayLongPress={500}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
