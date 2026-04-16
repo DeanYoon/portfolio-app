@@ -5,68 +5,58 @@ const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 interface CacheStructure {
   [ticker: string]: {
-    data: any;
+    data: any[];
     timestamp: number;
-    period: string; // 저장된 데이터의 원본 기간 (예: '1y')
+    period: string;
   };
 }
 
 /**
- * 1년치 데이터를 기본으로 가져와서 캐싱하고, 필요한 기간만큼 잘라서 반환합니다.
+ * 1년치 데이터를 기본으로 가져와서 캐싱하고, 배열 형태로 반환합니다.
  */
 export const getStockHistory = async (
   ticker: string,
   period: string, // '1mo', '6mo', '1y'
   apiUrl: string,
   forceRefresh = false
-): Promise<any> => {
-  if (!ticker) return null;
+): Promise<any[]> => {
+  if (!ticker) return [];
 
   try {
     const cachedStr = await AsyncStorage.getItem(STOCK_HISTORY_STORAGE_KEY);
     let cache: CacheStructure = cachedStr ? JSON.parse(cachedStr) : {};
     const now = Date.now();
 
-    // 1. 캐시 확인: 이미 1y 데이터가 있고 24시간 이내라면 활용
+    // 1. 캐시 확인
     if (!forceRefresh && cache[ticker]) {
       const item = cache[ticker];
       if (now - item.timestamp < CACHE_TTL) {
-        console.log(`[HistoryCache] HIT for ${ticker} (returning subset of ${item.period})`);
-        return item.data; // UI단에서 어차피 날짜 필터링을 하므로 전체 데이터 반환
+        console.log(`[HistoryCache] HIT for ${ticker}`);
+        return item.data;
       }
     }
 
-    // 2. Fetch from API: 무조건 '1y'로 요청하여 넓은 범위를 확보
+    // 2. Fetch from API
     const fetchPeriod = '1y';
-    console.log(`[HistoryCache] MISS for ${ticker}. Fetching ${fetchPeriod} for wide coverage...`);
+    console.log(`[HistoryCache] MISS for ${ticker}. Fetching ${fetchPeriod}...`);
     const res = await fetch(`${apiUrl}/history?symbols=${ticker}&period=${fetchPeriod}`);
     if (!res.ok) throw new Error(`History API error: ${res.status}`);
     
     const fullData = await res.json();
+    const tickerData = fullData[ticker] || [];
 
-    // 3. 데이터 경량화
-    const optimized: any = {};
-    if (fullData && fullData[ticker]) {
-      optimized[ticker] = {};
-      Object.entries(fullData[ticker]).forEach(([date, details]: [string, any]) => {
-        if (details.close != null) {
-          optimized[ticker][date] = { close: details.close };
-        }
-      });
-    }
-
-    // 4. 구조화된 캐시에 저장
+    // 3. 캐시에 저장 (배열 형식 그대로 유지)
     cache[ticker] = {
-      data: optimized,
+      data: tickerData,
       timestamp: now,
       period: fetchPeriod
     };
 
     await AsyncStorage.setItem(STOCK_HISTORY_STORAGE_KEY, JSON.stringify(cache));
 
-    return optimized;
+    return tickerData;
   } catch (e) {
     console.error('[HistoryCache] Error:', e);
-    return null;
+    return [];
   }
 };
