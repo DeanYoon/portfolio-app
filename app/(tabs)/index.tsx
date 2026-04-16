@@ -293,12 +293,12 @@ export default function DashboardScreen() {
       
     let gT = 0, gI = 0, gD = 0, uP = 0, uV = 0, jP = 0, jV = 0, kP = 0, kV = 0;
 
-    const result = activePortfolios.map(p => {
-      let pT = 0, pI = 0, pD = 0;
-      // Portfolio-level constant buy rate for USD
+    const allStocks: any[] = [];
+
+    activePortfolios.forEach(p => {
       const buyRate = p.avg_usd_krw_rate || usdkrw; 
 
-      const rows = p.holdings.map(h => {
+      p.holdings.forEach(h => {
         const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
         const currentRate = h.currency === 'USD' ? usdkrw : h.currency === 'JPY' ? jpykrw : 1;
         const isJp = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker);
@@ -308,33 +308,28 @@ export default function DashboardScreen() {
         const vL = qty * cp; 
         const iL = qty * (isCash ? cp : h.avg_price);
         
-        // --- 🛡️ 정확한 수익률 계산 (2번 방식: 포트폴리오 기준 환율 적용) ---
-        const vK = vL * currentRate;  // 현재 가치 (현재 환율)
-        const iK = iL * (h.currency === 'USD' ? buyRate : currentRate); // 매수 금액 (매수 시점 환율 적용)
+        const vK = vL * currentRate;
+        const iK = iL * (h.currency === 'USD' ? buyRate : currentRate);
         
-        // --- 📊 일일 변동 계산 (주가 변동 + 환율 변동 모두 반영) ---
         const fxInfo = h.currency === 'USD' ? priceMap['USDKRW=X'] : h.currency === 'JPY' ? priceMap['JPYKRW=X'] : null;
-        
         const currentLocalPrice = cp;
         const previousLocalPrice = mi?.previous_close || (currentLocalPrice - (mi?.change_amount || 0));
-        
         const currentFX = currentRate;
-        const previousFX = fxInfo?.previous_close || currentFX; // 환율 변동이 없는 경우(KRW 등) 현재 환율 유지
+        const previousFX = fxInfo?.previous_close || currentFX;
 
         const currentValueKRW = currentLocalPrice * currentFX * qty;
         const previousValueKRW = previousLocalPrice * previousFX * qty;
         
         const dK = isCash ? 0 : (currentValueKRW - previousValueKRW);
         const dayChangePct = isCash ? 0 : (previousValueKRW > 0 ? ((currentValueKRW - previousValueKRW) / previousValueKRW) * 100 : 0);
-        
         const effectiveProfitRate = isCash ? 0 : (iK > 0 ? ((vK - iK) / iK) * 100 : 0);
         
-        pT += vK; pI += iK; pD += dK;
+        gT += vK; gI += iK; gD += dK;
         if (h.currency === 'USD') { uV += vK; uP += (vK - iK); }
         else if (h.currency === 'JPY') { jV += vK; jP += (vK - iK); }
         else { kV += vK; kP += (vK - iK); }
 
-        return { 
+        allStocks.push({ 
           ...h, 
           currentPrice: cp, 
           valueKRW: vK, 
@@ -345,21 +340,39 @@ export default function DashboardScreen() {
           dayChangePercent: isCash ? 0 : dayChangePct, 
           displayName: mi?.name || h.name || h.ticker, 
           flag: getFlag(h.country) 
-        };
+        });
       });
-      rows.sort((a, b) => {
-        if (sortBy === 'value') return b.valueKRW - a.valueKRW;
-        if (sortBy === 'profit') return b.profitValueKRW - a.profitValueKRW;
-        if (sortBy === 'rate') return b.profitRate - a.profitRate;
-        return a.displayName.localeCompare(b.displayName);
-      });
-      gT += pT; gI += pI; gD += pD;
-      return { ...p, rows, pT, pI, pD };
+    });
+
+    // 티커별 통합 (통합 계좌일 경우 동일 종목 합산)
+    const consolidatedMap: Record<string, any> = {};
+    allStocks.forEach(s => {
+      if (!consolidatedMap[s.ticker]) {
+        consolidatedMap[s.ticker] = { ...s };
+      } else {
+        const existing = consolidatedMap[s.ticker];
+        existing.quantity += s.quantity;
+        existing.valueKRW += s.valueKRW;
+        existing.valueLocal += s.valueLocal;
+        existing.profitValueKRW += s.profitValueKRW;
+        existing.dayChangeKRW += s.dayChangeKRW;
+        // 가중 평균 수익률/변동률 계산 (단순 합산이 아닌 가치 비중 기준)
+        existing.profitRate = existing.valueKRW > existing.profitValueKRW ? (existing.profitValueKRW / (existing.valueKRW - existing.profitValueKRW)) * 100 : 0;
+      }
+    });
+
+    const rows = Object.values(consolidatedMap);
+    
+    rows.sort((a: any, b: any) => {
+      if (sortBy === 'value') return b.valueKRW - a.valueKRW;
+      if (sortBy === 'profit') return b.profitValueKRW - a.profitValueKRW;
+      if (sortBy === 'rate') return b.profitRate - a.profitRate;
+      return a.displayName.localeCompare(b.displayName);
     });
 
     const tax = calculateTax(uP, 'USD');
     return {
-      processed: result,
+      processed: [{ id: 'ALL', name: '통합 계좌', rows }],
       totals: { gT, gI, gD, gProfit: gT - gI, gRate: gI > 0 ? ((gT - gI) / gI) * 100 : 0, dRate: (gT - gD) !== 0 ? (gD / (gT - gD)) * 100 : 0, vix: priceMap['^VIX']?.price },
       exitSimulation: { totalValue: gT, tax, netAmount: gT - tax, breakdown: { uV, uP, kV, kP, jV, jP } }
     };
