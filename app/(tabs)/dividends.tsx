@@ -402,8 +402,7 @@ export default function DividendsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
-      {/* Portfolio selector */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.pbtn}>
           <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
           <ChevronDown size={16} color="#71717a" />
