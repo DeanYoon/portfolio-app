@@ -280,6 +280,10 @@ export default function TrendsScreen() {
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
   }, [allHistory, period, allocationData.total]);
   
+  const onRefresh = useCallback(() => {
+    loadTrends(true);
+  }, [loadTrends]);
+
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s) setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
   if (authLoading || (dataLoading && holdings.length === 0)) return <TrendsSkeleton insets={insets} />;
