@@ -238,9 +238,22 @@ export default function TrendsScreen() {
   }, [session]);
 
   const allocationData = useMemo(() => {
-    const filtered = !selectedId ? holdings : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
+    // 'ALL'일 때는 모든 holdings를 합산하고, 아니면 해당 ID로 필터링
+    const filtered = (selectedId === 'ALL' || !selectedId) ? holdings : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
+    
+    // 통합 계좌일 때는 포트폴리오별로 겹치는 티커가 있을 수 있으므로 ticker별로 합산
+    const consolidated = filtered.reduce((acc: any, h: any) => {
+        const key = h.ticker;
+        if (!acc[key]) {
+          acc[key] = { ...h };
+        } else {
+          acc[key].quantity += h.quantity;
+        }
+        return acc;
+    }, {});
+
     const usdkrw = priceMap['USDKRW=X']?.price || 1400; const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
-    const items = filtered.map(h => {
+    const items = Object.values(consolidated).map((h: any) => {
       const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
       const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity/10000 : h.quantity;
