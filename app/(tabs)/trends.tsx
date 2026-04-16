@@ -262,11 +262,23 @@ export default function TrendsScreen() {
   }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const historyWithToday = [...allHistory];
+    
+    // 오늘 자산 데이터를 마지막 데이터 포인트로 추가
+    if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date !== today) {
+      if (allocationData.total > 0) {
+          historyWithToday.push({ snapshot_date: today, total_value_krw: allocationData.total });
+      }
+    } else if (historyWithToday.length > 0 && historyWithToday[historyWithToday.length - 1].snapshot_date === today) {
+       historyWithToday[historyWithToday.length - 1].total_value_krw = allocationData.total;
+    }
+
     const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate()-7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth()-1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth()-3);
     const cutoffStr = cutoff.toISOString().split('T')[0];
-    const filtered = period === 'ALL' ? allHistory : allHistory.filter(s => s.snapshot_date >= cutoffStr);
+    const filtered = period === 'ALL' ? historyWithToday : historyWithToday.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
-  }, [allHistory, period]);
+  }, [allHistory, period, allocationData.total]);
   
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s) setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
