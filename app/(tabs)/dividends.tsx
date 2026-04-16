@@ -8,7 +8,7 @@ import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/port
 import { getHoldings } from '@/src/utils/holdings-cache';
 import { getDividends } from '@/src/utils/dividends-cache';
 import { formatCurrency, getFlag } from '@/src/utils/format';
-import { TrendingUp, ChevronDown, ShieldCheck, Info } from 'lucide-react-native';
+import { TrendingUp, ChevronDown, ShieldCheck, Info, RefreshCw } from 'lucide-react-native';
 import { getTaxRate, calculateDividendYield, calculateLatestTrendEstimate, TrendEstimate } from '@/src/utils/dividend-calc';
 import { endOfMonth, isPast, isSameMonth, parseISO } from 'date-fns';
 
@@ -408,8 +408,8 @@ export default function DividendsScreen() {
           <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={onRefresh} style={{ padding: 8 }}>
-          <Text style={{ fontSize: 18 }}>🔄</Text>
+        <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+          <RefreshCw size={20} color="#e4e4e7" />
         </TouchableOpacity>
       </View>
       <ScrollView 

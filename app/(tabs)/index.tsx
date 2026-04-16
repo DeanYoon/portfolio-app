@@ -373,10 +373,8 @@ export default function DashboardScreen() {
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text><ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8, borderWidth: 1, borderColor: '#166534' }}>
-            <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <RefreshCw size={20} color="#052e16" />
-            </Animated.View>
+          <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
+            <RefreshCw size={20} color="#e4e4e7" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setEditHolding(null); setShowHoldingModal(true); }} style={{ padding: 8, backgroundColor: '#22c55e', borderRadius: 8 }}><Plus size={20} color="#052e16" /></TouchableOpacity>
         </View>
