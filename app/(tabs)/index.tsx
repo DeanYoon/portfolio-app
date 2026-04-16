@@ -231,7 +231,8 @@ export default function DashboardScreen() {
 
   const setSelectedId = async (id: string | undefined) => {
     setSelectedIdLocal(id);
-    await setSelectedPortfolioId(id || null);
+    await setSelectedPortfolioId(id === 'ALL' ? 'ALL' : (id || null));
+    setShowPortfolioPicker(false);
   };
 
   const loadDashboard = useCallback(async (forceRefresh = false) => {
@@ -285,8 +286,11 @@ export default function DashboardScreen() {
   const onRefresh = useCallback(() => { setRefreshing(true); loadDashboard(true); }, [loadDashboard]);
 
   const processedData = useMemo(() => {
-    const actId = selectedId || String(portfolios[0]?.id);
-    const activePortfolios = portfolios.filter(p => String(p.id) === actId);
+    const actId = selectedId || (portfolios.length > 0 ? String(portfolios[0].id) : undefined);
+    const activePortfolios = selectedId === 'ALL' 
+      ? portfolios 
+      : portfolios.filter(p => String(p.id) === actId);
+      
     let gT = 0, gI = 0, gD = 0, uP = 0, uV = 0, jP = 0, jV = 0, kP = 0, kV = 0;
 
     const result = activePortfolios.map(p => {
@@ -370,7 +374,7 @@ export default function DashboardScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{processed[0]?.name?.substring(0, 12) || '계좌'}</Text><ChevronDown size={16} color="#71717a" />
+          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{selectedId === 'ALL' ? '통합 계좌' : (processed[0]?.name?.substring(0, 12) || '계좌')}</Text><ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
@@ -498,10 +502,14 @@ export default function DashboardScreen() {
             activeOpacity={1}
             style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }}
           >
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 16 }}>계좌 선택</Text>
-            <ScrollView style={{ marginBottom: 10 }}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
+            <ScrollView>
+              <TouchableOpacity onPress={() => setSelectedId('ALL')} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: 'bold', color: selectedId === 'ALL' ? '#22c55e' : '#e4e4e7' }}>통합 계좌</Text>
+                {selectedId === 'ALL' && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
+              </TouchableOpacity>
               {portfolios.map(p => (
-                <TouchableOpacity key={p.id} onPress={() => { setSelectedId(String(p.id)); setShowPortfolioPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <TouchableOpacity key={p.id} onPress={() => setSelectedId(p.id)} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: String(p.id) === selectedId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
                   {String(p.id) === selectedId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
                 </TouchableOpacity>

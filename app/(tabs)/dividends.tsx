@@ -187,14 +187,15 @@ export default function DividendsScreen() {
 
   // ── Fetch dividends ──
   const fetchDividends = useCallback(async (pid: string, forceRefresh = false) => {
-    if (!pid || isFetchingRef.current) return;
+    if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setDataLoading(true);
     setLoading(true);
     setError(null);
     try {
-      // 1. 보유 종목(Holdings)은 캐시에서 즉시 로드 (Holdings는 캐시 활용)
-      const holdings = await getHoldings(pid, forceRefresh);
+      // ALL이면 undefined 전달하여 전체 holdings 로드
+      const targetPid = pid === 'ALL' ? undefined : pid;
+      const holdings = await getHoldings(targetPid, forceRefresh);
       if (holdings.length === 0) { 
         setStockDividends([]); 
         setLoading(false); 
@@ -322,13 +323,13 @@ export default function DividendsScreen() {
     }
   }, []);
 
-  useEffect(() => { if (selectedPortfolioId) fetchDividends(selectedPortfolioId); }, [selectedPortfolioId, fetchDividends]);
+  useEffect(() => { 
+    fetchDividends(selectedPortfolioId || 'ALL'); 
+  }, [selectedPortfolioId, fetchDividends]);
 
   const onRefresh = useCallback(() => {
-    if (selectedPortfolioId) {
-      setRefreshing(true);
-      fetchDividends(selectedPortfolioId, true);
-    }
+    setRefreshing(true);
+    fetchDividends(selectedPortfolioId || 'ALL', true);
   }, [selectedPortfolioId, fetchDividends]);
 
   // ── Helpers ──
@@ -404,7 +405,7 @@ export default function DividendsScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b', paddingTop: insets.top }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.pbtn}>
-          <Text style={styles.ptxt}>{portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌'}</Text>
+          <Text style={styles.ptxt}>{selectedPortfolioId === 'ALL' ? '통합 계좌' : (portfolios.find(p => p.id === selectedPortfolioId)?.name?.slice(0, 12) || '계좌')}</Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
@@ -585,8 +586,12 @@ export default function DividendsScreen() {
           >
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#f4f4f5', marginBottom: 12 }}>계좌 선택</Text>
             <ScrollView>
+              <TouchableOpacity onPress={() => setSelectedPortfolioIdShared('ALL')} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: 'bold', color: selectedPortfolioId === 'ALL' ? '#22c55e' : '#e4e4e7' }}>통합 계좌</Text>
+                {selectedPortfolioId === 'ALL' && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
+              </TouchableOpacity>
               {portfolios.map(p => (
-                <TouchableOpacity key={p.id} onPress={async () => { await setSelectedPortfolioIdShared(p.id); setShowPicker(false); }} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between' }}>
+                <TouchableOpacity key={p.id} onPress={() => setSelectedPortfolioIdShared(p.id)} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#27272a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: p.id === selectedPortfolioId ? '#22c55e' : '#e4e4e7' }}>{p.name}</Text>
                   {p.id === selectedPortfolioId && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }} />}
                 </TouchableOpacity>
