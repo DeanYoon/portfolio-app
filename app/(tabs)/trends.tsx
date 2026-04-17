@@ -357,7 +357,9 @@ export default function TrendsScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{selectedId === 'ALL' ? '통합 계좌' : (portfolios.find(p => p.id === selectedId)?.name?.substring(0,10) || '계좌 선택')}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>
+            {(!selectedId || selectedId === 'ALL') ? '통합 계좌' : (portfolios.find(p => p.id === String(selectedId))?.name?.substring(0,10) || '계좌 선택')}
+          </Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
