@@ -373,10 +373,10 @@ export default function TrendsScreen() {
         <ErrorBoundary name="Trends Main Chart">
           <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
             <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2 }}>PERFORMANCE</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 8, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'column', marginTop: 8, marginBottom: 20 }}>
               <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(lastVal)}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: diff >= 0 ? '#22c55e' : '#3b82f6' }}>{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: diff >= 0 ? '#22c55e' : '#3b82f6', marginRight: 6 }}>{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#71717a' }}>({diff >= 0 ? '+' : ''}{formatCurrency(diff)})</Text>
               </View>
             </View>
