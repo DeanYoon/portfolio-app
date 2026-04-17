@@ -222,7 +222,10 @@ export default function TrendsScreen() {
         const tickers = Array.from(new Set([...cachedHoldings.map((h: any) => h.ticker), '^VIX', 'USDKRW=X', 'JPYKRW=X']));
         quotePromise = fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${tickers.join(',')}`).then(r => r.json());
       }
-      const [pRes, sRes] = await Promise.all([supabase.from('portfolios').select('id, name').eq('user_id', session.user.id), supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true })]);
+      const [pRes, sRes] = await Promise.all([
+        supabase.from('portfolios').select('id, name').eq('user_id', session.user.id), 
+        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }).range(0, 5000)
+      ]);
       if (!pRes.data) { isFetchingRef.current = false; setDataLoading(false); return; }
       const pIds = pRes.data.map(p => p.id);
       const jpTickers = cachedHoldings.filter(h => h.country === 'JP').map(h => h.ticker);
