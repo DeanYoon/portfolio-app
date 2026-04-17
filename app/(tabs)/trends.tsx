@@ -222,10 +222,23 @@ export default function TrendsScreen() {
         const tickers = Array.from(new Set([...cachedHoldings.map((h: any) => h.ticker), '^VIX', 'USDKRW=X', 'JPYKRW=X']));
         quotePromise = fetch(`https://yahoo-finance-api-seven.vercel.app/quote?symbols=${tickers.join(',')}`).then(r => r.json());
       }
-      const [pRes, sRes] = await Promise.all([
-        supabase.from('portfolios').select('id, name').eq('user_id', session.user.id), 
-        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }).limit(5000)
+      const [pRes, sResData] = await Promise.all([
+        supabase.from('portfolios').select('id, name').eq('user_id', session.user.id),
+        (async () => {
+          let allSnapshots: any[] = [];
+          for (let i = 0; i < 3; i++) { // 3,000개까지 조회 (3x1000)
+            const { data } = await supabase
+              .from('portfolio_snapshots')
+              .select('snapshot_date, total_value_krw, portfolio_id')
+              .order('snapshot_date', { ascending: true })
+              .range(i * 1000, (i + 1) * 1000 - 1);
+            if (!data || data.length === 0) break;
+            allSnapshots = [...allSnapshots, ...data];
+          }
+          return { data: allSnapshots };
+        })()
       ]);
+      const sRes = sResData;
       if (!pRes.data) { isFetchingRef.current = false; setDataLoading(false); return; }
       const pIds = pRes.data.map(p => p.id);
       const jpTickers = cachedHoldings.filter(h => h.country === 'JP').map(h => h.ticker);
