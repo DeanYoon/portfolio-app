@@ -387,7 +387,10 @@ export default function DashboardScreen() {
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPortfolioPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>{selectedId === 'ALL' ? '통합 계좌' : (processed[0]?.name?.substring(0, 12) || '계좌')}</Text><ChevronDown size={16} color="#71717a" />
+          <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>
+            {(!selectedId || selectedId === 'ALL') ? '통합 계좌' : (portfolios.find(p => String(p.id) === String(selectedId))?.name?.substring(0, 12) || '계좌')}
+          </Text>
+          <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <TouchableOpacity onPress={onRefresh} style={{ padding: 8, backgroundColor: '#18181b', borderRadius: 8, borderWidth: 1, borderColor: '#27272a' }}>
