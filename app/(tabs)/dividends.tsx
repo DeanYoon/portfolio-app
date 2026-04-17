@@ -187,11 +187,14 @@ export default function DividendsScreen() {
 
   // ── Fetch dividends ──
   const fetchDividends = useCallback(async (pid: string, forceRefresh = false) => {
-    if (isFetchingRef.current) return;
+    // 이전 데이터 플러시 및 로딩 상태 초기화
+    if (!forceRefresh && isFetchingRef.current) return;
     isFetchingRef.current = true;
     setDataLoading(true);
     setLoading(true);
     setError(null);
+    setStockDividends([]); // 계좌 변경/새로고침 시 기존 데이터 초기화 명시
+    
     try {
       // ALL이면 undefined 전달하여 전체 holdings 로드
       const targetPid = pid === 'ALL' ? undefined : pid;
