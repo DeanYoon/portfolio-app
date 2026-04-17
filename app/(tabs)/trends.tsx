@@ -224,7 +224,7 @@ export default function TrendsScreen() {
       }
       const [pRes, sRes] = await Promise.all([
         supabase.from('portfolios').select('id, name').eq('user_id', session.user.id), 
-        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }).range(0, 5000)
+        supabase.from('portfolio_snapshots').select('snapshot_date, total_value_krw, portfolio_id').order('snapshot_date', { ascending: true }).limit(5000)
       ]);
       if (!pRes.data) { isFetchingRef.current = false; setDataLoading(false); return; }
       const pIds = pRes.data.map(p => p.id);
