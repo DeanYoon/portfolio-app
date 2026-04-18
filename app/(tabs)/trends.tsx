@@ -157,7 +157,21 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
     if (activeIndices.length === 0 || data.length === 0) return null;
     const shortDate = (ds: string) => ds.split('T')[0].slice(2).replace(/-/g, '.');
     if (activeIndices.length === 1) {
-      const d = data[activeIndices[0]]; return { x: getX(d.x), y: sy(d.y), lines: [shortDate(d.datum.snapshot_date), formatCurrency(d.y)], highlight: null, crosshairX: getX(d.x) };
+      const d = data[activeIndices[0]];
+      const startD = data[0]; 
+      const diff = d.y - startD.y;
+      const roi = startD.y > 0 ? (diff / startD.y) * 100 : 0;
+      return { 
+          x: getX(d.x), 
+          y: sy(d.y), 
+          lines: [
+              shortDate(d.datum.snapshot_date), 
+              `${formatCurrency(d.y)}`,
+              `${diff >= 0 ? '+' : ''}${roi.toFixed(2)}%`
+          ], 
+          highlight: null, 
+          crosshairX: getX(d.x) 
+      };
     }
     const idxS = Math.min(...activeIndices); const idxE = Math.max(...activeIndices); const s = data[idxS]; const e = data[idxE];
     const diff = e.y - s.y; const roi = s.y > 0 ? (diff / s.y) * 100 : 0;
@@ -188,7 +202,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
         {tooltipInfo?.crosshairX != null && <Line x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX} y1={PAD_TOP} y2={PAD_TOP + innerH} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />}
         {activeIndices.map(idx => <Circle key={`a-${idx}`} cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />)}
-        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 45); const tipW = 160; const tipH = 40; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[1].includes('(') ? (tooltipInfo.lines[1].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText></>); })()}</G>}
+{ tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[2]?.includes('%') ? (tooltipInfo.lines[2].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 45} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText></>); })()}</G>}
       </Svg>
     </View>
   );
