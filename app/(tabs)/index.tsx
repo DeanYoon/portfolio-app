@@ -185,7 +185,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { session, loading: authLoading } = useAuth();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [selectedId, setSelectedIdLocal] = useState<string | undefined>();
+  const [selectedId, setSelectedIdLocal] = useState<string>('ALL');
   const [dataLoading, setDataLoading] = useState(true);
   const [priceMap, setPriceMap] = useState<Record<string, PriceData>>({});
   const [usdkrw, setUsdKrw] = useState(1400);
@@ -249,7 +249,7 @@ export default function DashboardScreen() {
       if (error || !pData) { setLoading(false); isFetchingRef.current = false; return; }
 
       const prices = await pricesPromise;
-      if (!selectedId && pData.length > 0) setSelectedIdLocal(String(pData[0].id));
+      // removed auto-selecting first portfolio to maintain consistency with other tabs (ALL)
 
       const updatedPData = pData.map(p => ({
         ...p,

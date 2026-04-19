@@ -212,7 +212,7 @@ export default function TrendsScreen() {
   const insets = useSafeAreaInsets();
   const { session, loading: authLoading } = useAuth();
   const [portfolios, setPortfolios] = useState<any[]>([]);
-  const [selectedId, setSelectedIdLocal] = useState<string>('');
+  const [selectedId, setSelectedIdLocal] = useState<string>('ALL');
   const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<any[]>([]);
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | 'ALL'>('1M');
@@ -361,7 +361,7 @@ export default function TrendsScreen() {
     loadTrends(true);
   }, [loadTrends]);
 
-  useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { if (s) setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
+  useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
   if (authLoading || (dataLoading && holdings.length === 0)) return <TrendsSkeleton insets={insets} />;
   const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max-min)*0.1 || min*0.1; return [Math.max(0, min-pad), max+pad]; })() : [0, 100];

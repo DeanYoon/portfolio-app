@@ -2,8 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY = 'selected_portfolio_id';
 
-export async function getSelectedPortfolioId(): Promise<string | null> {
-  try { return await AsyncStorage.getItem(KEY); } catch { return null; }
+export async function getSelectedPortfolioId(): Promise<string> {
+  try { 
+    const id = await AsyncStorage.getItem(KEY);
+    return id || 'ALL'; 
+  } catch { 
+    return 'ALL'; 
+  }
 }
 
 export async function setSelectedPortfolioId(id: string | null) {

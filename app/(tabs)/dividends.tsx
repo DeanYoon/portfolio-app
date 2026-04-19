@@ -143,7 +143,8 @@ export default function DividendsScreen() {
   const [isAfterTax, setIsAfterTax] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioItem[]>([]);
-  const [selectedPortfolioId, setSelectedPortfolioIdLocal] = useState<string | null>(null);
+  const [selectedPortfolioId, setSelectedPortfolioIdLocal] = useState<string>('ALL');
+  const lastFetchedPidRef = useRef<string | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [stockDividends, setStockDividends] = useState<StockDividendData[]>([]);
@@ -158,9 +159,9 @@ export default function DividendsScreen() {
       const { data } = await supabase.from('portfolios').select('id, name').eq('user_id', session.user.id);
       if (data?.length) { 
         setPortfolios(data); 
-        const saved = await getSelectedPortfolioId();
-        setSelectedPortfolioIdLocal(saved || data[0].id); 
       }
+      const saved = await getSelectedPortfolioId();
+      setSelectedPortfolioIdLocal(saved);
     })();
   }, [session]);
 
@@ -181,15 +182,19 @@ export default function DividendsScreen() {
   }, [selectedPortfolioId]));
 
   const setSelectedPortfolioIdShared = async (id: string | null) => {
-    setSelectedPortfolioIdLocal(id);
+    setSelectedPortfolioIdLocal(id || 'ALL');
     await setSelectedPortfolioId(id);
+    setShowPicker(false);
   };
 
   // ── Fetch dividends ──
   const fetchDividends = useCallback(async (pid: string, forceRefresh = false) => {
-    // 이전 데이터 플러시 및 로딩 상태 초기화
-    if (!forceRefresh && isFetchingRef.current) return;
+    // 만약 이미 해당 pid로 페칭 중이라면 중복 방지. 
+    // 하지만 pid가 다르다면(예: ALL -> 특정계좌) 페칭을 허용해야 함.
+    if (!forceRefresh && isFetchingRef.current && lastFetchedPidRef.current === pid) return;
+    
     isFetchingRef.current = true;
+    lastFetchedPidRef.current = pid;
     setDataLoading(true);
     setLoading(true);
     setError(null);
@@ -319,7 +324,10 @@ export default function DividendsScreen() {
         };
       }).filter(x => x !== null);
 
-      setStockDividends(final);
+      // 요청한 pid와 현재 최신 pid가 일치하는 경우에만 상태 업데이트 (레이스 컨디션 방지)
+      if (lastFetchedPidRef.current === pid) {
+        setStockDividends(final);
+      }
     } catch (e: any) {
       setError(e.message);
       console.error(e);
