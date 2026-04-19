@@ -1,15 +1,15 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Pressable, AppState, AppStateStatus, Modal, Animated, Easing } from 'react-native';
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { ErrorBoundary } from '@/src/components/error-boundary';
 import { useAuth } from '@/src/hooks/useAuth';
 import { supabase } from '@/src/lib/supabase';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatRate } from '@/src/utils/format';
-import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import { getHoldings } from '@/src/utils/holdings-cache';
-import { Wallet, ArrowUpRight, ArrowDownRight, ChevronDown, RefreshCw } from 'lucide-react-native';
-import Svg, { Defs, LinearGradient, Stop, Line, Path, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
-import { ErrorBoundary } from '@/src/components/error-boundary';
+import { getSelectedPortfolioId, setSelectedPortfolioId } from '@/src/utils/portfolio-state';
+import { useFocusEffect } from 'expo-router';
+import { ChevronDown, RefreshCw } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Dimensions, Easing, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const CHART_H = 200;
@@ -66,7 +66,7 @@ const TrendsSkeleton = ({ insets }: { insets: any }) => (
       <Skeleton width={120} height={40} borderRadius={10} />
       <Skeleton width={150} height={40} borderRadius={10} />
     </View>
-    
+
     <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
       <Skeleton width={80} height={10} marginBottom={12} />
       <Skeleton width={200} height={32} marginBottom={20} />
@@ -131,7 +131,7 @@ function AllocationPie({ data, total }: { data: any[], total: number }) {
 
 function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void }) {
   const innerW = containerW - PAD_LEFT - PAD_RIGHT; const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  
+
   // Time-scale X-Axis: Calculate X position based on date ratio
   const getX = (date: Date) => {
     if (data.length <= 1) return PAD_LEFT + innerW / 2;
@@ -142,11 +142,11 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
   };
 
   const sy = (v: number) => (yDomain[1] === yDomain[0] ? PAD_TOP + innerH / 2 : PAD_TOP + innerH - ((v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH);
-  
+
   const linePoints = data.map((d) => ({ x: getX(d.x), y: sy(d.y) }));
   const lineD = linePoints.length > 1 ? linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') : '';
   const areaD = linePoints.length > 1 ? lineD + ` L${linePoints[linePoints.length - 1].x.toFixed(1)},${PAD_TOP + innerH} L${linePoints[0].x.toFixed(1)},${PAD_TOP + innerH} Z` : '';
-  
+
   const colorPositive = data.length > 1 && data[data.length - 1].y >= data[0].y ? '#22c55e' : '#3b82f6';
   const gridLines: any[] = [];
   for (let i = 0; i <= 3; i++) {
@@ -158,19 +158,19 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
     const shortDate = (ds: string) => ds.split('T')[0].slice(2).replace(/-/g, '.');
     if (activeIndices.length === 1) {
       const d = data[activeIndices[0]];
-      const startD = data[0]; 
+      const startD = data[0];
       const diff = d.y - startD.y;
       const roi = startD.y > 0 ? (diff / startD.y) * 100 : 0;
-      return { 
-          x: getX(d.x), 
-          y: sy(d.y), 
-          lines: [
-              shortDate(d.datum.snapshot_date), 
-              `${formatCurrency(d.y)}`,
-              `${diff >= 0 ? '+' : ''}${roi.toFixed(2)}%`
-          ], 
-          highlight: null, 
-          crosshairX: getX(d.x) 
+      return {
+        x: getX(d.x),
+        y: sy(d.y),
+        lines: [
+          shortDate(d.datum.snapshot_date),
+          `${formatCurrency(d.y)}`,
+          `${diff >= 0 ? '+' : ''}${roi.toFixed(2)}%`
+        ],
+        highlight: null,
+        crosshairX: getX(d.x)
       };
     }
     const idxS = Math.min(...activeIndices); const idxE = Math.max(...activeIndices); const s = data[idxS]; const e = data[idxE];
@@ -179,8 +179,8 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
   }, [activeIndices, data]);
 
   return (
-    <View style={{ position: 'relative' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => { 
-      const locX = e.nativeEvent.locationX; 
+    <View style={{ position: 'relative' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => {
+      const locX = e.nativeEvent.locationX;
       // Find closest data point index based on X position
       let closestIdx = 0;
       let minDiff = Infinity;
@@ -191,7 +191,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
           closestIdx = i;
         }
       });
-      onHit(closestIdx); 
+      onHit(closestIdx);
     }} onResponderRelease={onRelease} onResponderTerminate={onRelease}>
       <Svg width={containerW} height={CHART_H}>
         <Defs><LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" /><Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" /></LinearGradient></Defs>
@@ -202,7 +202,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
         {tooltipInfo?.crosshairX != null && <Line x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX} y1={PAD_TOP} y2={PAD_TOP + innerH} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />}
         {activeIndices.map(idx => <Circle key={`a-${idx}`} cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />)}
-{ tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[2]?.includes('%') ? (tooltipInfo.lines[2].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 45} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText></>); })()}</G>}
+        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[2]?.includes('%') ? (tooltipInfo.lines[2].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 45} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText></>); })()}</G>}
       </Svg>
     </View>
   );
@@ -270,39 +270,39 @@ export default function TrendsScreen() {
   const allocationData = useMemo(() => {
     // 'ALL'일 때는 모든 holdings를 합산하고, 아니면 해당 ID로 필터링
     const filtered = (selectedId === 'ALL' || !selectedId) ? holdings : holdings.filter(h => String(h.portfolio_id) === String(selectedId));
-    
+
     // 통합 계좌일 때는 포트폴리오별로 겹치는 티커가 있을 수 있으므로 ticker별로 합산
     const consolidated = filtered.reduce((acc: any, h: any) => {
-        const key = h.ticker;
-        if (!acc[key]) {
-          acc[key] = { ...h };
-        } else {
-          acc[key].quantity += h.quantity;
-        }
-        return acc;
+      const key = h.ticker;
+      if (!acc[key]) {
+        acc[key] = { ...h };
+      } else {
+        acc[key].quantity += h.quantity;
+      }
+      return acc;
     }, {});
 
     const usdkrw = priceMap['USDKRW=X']?.price || 1400; const jpykrw = priceMap['JPYKRW=X']?.price || 9.5;
     const items = Object.values(consolidated).map((h: any) => {
       const mi = priceMap[h.ticker]; const cp = mi?.price || h.avg_price;
       const rate = h.currency === 'USD' ? usdkrw : (h.currency === 'JPY' ? jpykrw : 1);
-      const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity/10000 : h.quantity;
+      const qty = h.country === 'JP' && /^[0-9A-Z]{8}$/.test(h.ticker) ? h.quantity / 10000 : h.quantity;
       const val = Math.round(qty * cp * rate);
       return { name: h.name || h.ticker, fullName: mi?.name || h.name || h.ticker, ticker: h.ticker, value: val };
-    }).filter(i => i.value > 0).sort((a,b) => b.value - a.value);
+    }).filter(i => i.value > 0).sort((a, b) => b.value - a.value);
     const total = items.reduce((s, i) => s + i.value, 0);
-    return { items: items.map(i => ({ ...i, percentage: total > 0 ? (i.value/total*100).toFixed(1) : "0" })), total };
+    return { items: items.map(i => ({ ...i, percentage: total > 0 ? (i.value / total * 100).toFixed(1) : "0" })), total };
   }, [holdings, priceMap, selectedId]);
 
   const allHistory = useMemo(() => {
     // rawSnapshots에서 모든 유효한 날짜 추출
     const allDates = Array.from(new Set(rawSnapshots.map(s => s.snapshot_date.split('T')[0])));
-    
+
     // 선택된 계좌별 데이터 필터링
-    const filteredSource = selectedId === 'ALL' || !selectedId 
-        ? rawSnapshots 
-        : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
-        
+    const filteredSource = selectedId === 'ALL' || !selectedId
+      ? rawSnapshots
+      : rawSnapshots.filter(s => String(s.portfolio_id) === String(selectedId));
+
     // 모든 날짜에 대해 해당 계좌(들)의 자산 합산
     const dailyTotals = allDates.map(date => {
       const val = filteredSource
@@ -310,8 +310,8 @@ export default function TrendsScreen() {
         .reduce((sum, curr) => sum + Number(curr.total_value_krw), 0);
       return { snapshot_date: date, total_value_krw: val };
     });
-    
-    return dailyTotals.sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date));
+
+    return dailyTotals.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
   }, [rawSnapshots, selectedId]);
 
   const chartData = useMemo(() => {
@@ -323,10 +323,10 @@ export default function TrendsScreen() {
       const historyMap = new Map(allHistory.map(h => [h.snapshot_date, h.total_value_krw]));
       const startDate = new Date(allHistory[0].snapshot_date);
       const endDate = new Date(allHistory[allHistory.length - 1].snapshot_date);
-      
+
       const filledHistory: any[] = [];
       let lastValue = allHistory[0].total_value_krw;
-      
+
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateStr = d.toISOString().split('T')[0];
         if (historyMap.has(dateStr)) {
@@ -341,22 +341,22 @@ export default function TrendsScreen() {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    
+
     // 오늘 자산 데이터를 마지막 데이터 포인트로 추가
     if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date !== today) {
       if (allocationData.total > 0) {
-          processedHistory.push({ snapshot_date: today, total_value_krw: allocationData.total });
+        processedHistory.push({ snapshot_date: today, total_value_krw: allocationData.total });
       }
     } else if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date === today) {
-       processedHistory[processedHistory.length - 1].total_value_krw = allocationData.total;
+      processedHistory[processedHistory.length - 1].total_value_krw = allocationData.total;
     }
 
-    const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate()-7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth()-1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth()-3);
+    const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate() - 7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth() - 1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth() - 3);
     const cutoffStr = cutoff.toISOString().split('T')[0];
     const filtered = period === 'ALL' ? processedHistory : processedHistory.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
   }, [allHistory, period, allocationData.total, selectedId]);
-  
+
   const onRefresh = useCallback(() => {
     loadTrends(true);
   }, [loadTrends]);
@@ -364,15 +364,15 @@ export default function TrendsScreen() {
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
   if (authLoading || (dataLoading && holdings.length === 0)) return <TrendsSkeleton insets={insets} />;
-  const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max-min)*0.1 || min*0.1; return [Math.max(0, min-pad), max+pad]; })() : [0, 100];
-  const lastVal = chartData[chartData.length-1]?.y || 0; const firstVal = chartData[0]?.y || 0; const diff = lastVal - firstVal;
-  
+  const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max - min) * 0.1 || min * 0.1; return [Math.max(0, min - pad), max + pad]; })() : [0, 100];
+  const lastVal = chartData[chartData.length - 1]?.y || 0; const firstVal = chartData[0]?.y || 0; const diff = lastVal - firstVal;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#09090b' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
         <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#e4e4e7' }}>
-            {(!selectedId || selectedId === 'ALL') ? '통합 계좌' : (portfolios.find(p => p.id === String(selectedId))?.name?.substring(0,10) || '계좌 선택')}
+            {(!selectedId || selectedId === 'ALL') ? '통합 계좌' : (portfolios.find(p => p.id === String(selectedId))?.name?.substring(0, 10) || '계좌 선택')}
           </Text>
           <ChevronDown size={16} color="#71717a" />
         </TouchableOpacity>
@@ -390,7 +390,7 @@ export default function TrendsScreen() {
             <View style={{ flexDirection: 'column', marginTop: 8, marginBottom: 20 }}>
               <Text style={{ fontSize: 28, fontWeight: '900', color: '#f4f4f5' }}>{formatCurrency(lastVal)}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: diff >= 0 ? '#22c55e' : '#3b82f6', marginRight: 6 }}>{formatRate(firstVal > 0 ? (diff/firstVal)*100 : 0)}</Text>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: diff >= 0 ? '#22c55e' : '#3b82f6', marginRight: 6 }}>{formatRate(firstVal > 0 ? (diff / firstVal) * 100 : 0)}</Text>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#71717a' }}>({diff >= 0 ? '+' : ''}{formatCurrency(diff)})</Text>
               </View>
             </View>
@@ -414,12 +414,12 @@ export default function TrendsScreen() {
       </ScrollView>
       {/* Portfolio Selector Modal */}
       <Modal visible={showPicker} transparent animationType="fade" onRequestClose={() => setShowPicker(false)}>
-        <TouchableOpacity 
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}
+          activeOpacity={1}
           onPress={() => setShowPicker(false)}
         >
-          <TouchableOpacity 
+          <TouchableOpacity
             activeOpacity={1}
             style={{ backgroundColor: '#18181b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: 400 }}
           >
