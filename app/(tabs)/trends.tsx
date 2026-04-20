@@ -340,7 +340,8 @@ export default function TrendsScreen() {
       processedHistory = filledHistory;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    // JST 기준으로 오늘 날짜 계산
+    const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     // 오늘 자산 데이터를 마지막 데이터 포인트로 추가
     if (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].snapshot_date !== today) {
@@ -383,7 +384,10 @@ export default function TrendsScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView 
+        contentContainerStyle={{ padding: 16 }} 
+        scrollEnabled={!activeIndices.length}
+    >
         <ErrorBoundary name="Trends Main Chart">
           <View style={{ backgroundColor: '#18181b', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#27272a', marginBottom: 24 }}>
             <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2 }}>PERFORMANCE</Text>
