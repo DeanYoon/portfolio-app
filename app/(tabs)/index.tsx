@@ -365,8 +365,16 @@ export default function DashboardScreen() {
     
     rows.sort((a: any, b: any) => {
       if (sortBy === 'value') return b.valueKRW - a.valueKRW;
-      if (sortBy === 'profit') return b.profitValueKRW - a.profitValueKRW;
-      if (sortBy === 'rate') return b.profitRate - a.profitRate;
+      if (sortBy === 'profit') {
+        const valA = isTodayMode ? a.dayChangeKRW : a.profitValueKRW;
+        const valB = isTodayMode ? b.dayChangeKRW : b.profitValueKRW;
+        return valB - valA;
+      }
+      if (sortBy === 'rate') {
+        const rateA = isTodayMode ? a.dayChangePercent : a.profitRate;
+        const rateB = isTodayMode ? b.dayChangePercent : b.profitRate;
+        return rateB - rateA;
+      }
       return a.displayName.localeCompare(b.displayName);
     });
 
