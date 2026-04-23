@@ -217,7 +217,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
         <Defs><LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" /><Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" /></LinearGradient></Defs>
         {gridLines}
         {areaD ? <Path d={areaD} fill="url(#areaGrad)" /> : null}
-        {benchmarkD ? <Path d={benchmarkD} fill="none" stroke="#71717a" strokeWidth={1.5} strokeDasharray="4,3" opacity={0.6} /> : null}
+        {benchmarkD ? <Path d={benchmarkD} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="4,3" opacity={0.8} /> : null}
         {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
         {data.length > 0 && [0, data.length - 1].map(i => <SvgText key={`x-${i}`} x={getX(data[i].x)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor={i === 0 ? "start" : "end"}>{data[i].datum.snapshot_date.split('T')[0].slice(2)}</SvgText>)}
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
@@ -440,13 +440,16 @@ export default function TrendsScreen() {
 
     if (!startPrice) return [];
     
-    return chartData.map(d => {
+    const mapped = chartData.map(d => {
       const currentPrice = getPriceOnOrBefore(d.datum.snapshot_date);
       return {
         x: d.x,
-        y: (currentPrice / startPrice) * startValue
+        y: (currentPrice / startPrice) * startValue,
+        datum: d.datum
       };
     });
+
+    return mapped;
   }, [showBenchmark, chartData, benchmarkRaw]);
 
   const onRefresh = useCallback(() => {
@@ -456,7 +459,17 @@ export default function TrendsScreen() {
   useFocusEffect(useCallback(() => { getSelectedPortfolioId().then(s => { setSelectedIdLocal(s); loadTrends(); }); }, [loadTrends]));
 
   if (authLoading || (dataLoading && holdings.length === 0)) return <TrendsSkeleton insets={insets} />;
-  const yDomain: [number, number] = chartData.length ? (() => { const vals = chartData.map(d => d.y); const min = Math.min(...vals); const max = Math.max(...vals); const pad = (max - min) * 0.1 || min * 0.1; return [Math.max(0, min - pad), max + pad]; })() : [0, 100];
+
+  const yDomain: [number, number] = chartData.length ? (() => { 
+    const portfolioVals = chartData.map(d => d.y);
+    const benchmarkVals = benchmarkData.map(d => d.y);
+    const allVals = [...portfolioVals, ...benchmarkVals];
+    
+    const min = Math.min(...allVals); 
+    const max = Math.max(...allVals); 
+    const pad = (max - min) * 0.15 || min * 0.1; 
+    return [Math.max(0, min - pad), max + pad]; 
+  })() : [0, 100];
   const lastVal = chartData[chartData.length - 1]?.y || 0; const firstVal = chartData[0]?.y || 0; const diff = lastVal - firstVal;
 
   return (
