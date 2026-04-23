@@ -129,7 +129,7 @@ function AllocationPie({ data, total }: { data: any[], total: number }) {
   );
 }
 
-function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease, benchmarkData = [] }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void, benchmarkData?: any[] }) {
+function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease, benchmarkData = [], benchmarkSymbol = 'NONE' }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void, benchmarkData?: any[], benchmarkSymbol?: string }) {
   const innerW = containerW - PAD_LEFT - PAD_RIGHT; const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
 
   // Time-scale X-Axis: Calculate X position based on date ratio
@@ -505,7 +505,7 @@ export default function TrendsScreen() {
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#71717a' }}>({diff >= 0 ? '+' : ''}{formatCurrency(diff)})</Text>
               </View>
             </View>
-            <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} benchmarkData={benchmarkData} /></View>
+            <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} benchmarkData={benchmarkData} benchmarkSymbol={benchmarkSymbol} /></View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 {(['1W', '1M', '3M', '6M', 'ALL'] as const).map((p) => (
