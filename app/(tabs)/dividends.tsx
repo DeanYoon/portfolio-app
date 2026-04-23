@@ -131,6 +131,7 @@ interface StockAnalysis {
   analysis: ReturnType<typeof calculateDividendYield>;
   estimates: TrendEstimate[];
   tax: number; annualKrw: number;
+  currentValueKrw: number;
 }
 
 export default function DividendsScreen() {
@@ -397,18 +398,26 @@ export default function DividendsScreen() {
   const monthVal = selectedMonth !== null ? monthlyData[selectedMonth]?.value ?? 0 : 0;
 
   // ── Stock analysis list ──
-  const analysisList: StockAnalysis[] = useMemo(() => {
-    if (!stockDividends.length) return [];
+  const { analysisList, totalAssetValue } = useMemo(() => {
+    if (!stockDividends.length) return { analysisList: [], totalAssetValue: 0 };
     const cy = new Date().getFullYear();
-    return stockDividends.map(sd => {
+    let totalAssets = 0;
+    
+    const list = stockDividends.map(sd => {
       const tax = getTaxRate(sd.country, isAfterTax);
-      const analysis = calculateDividendYield(sd.dividends as any, stockPrices[sd.ticker] || 0, sd.ticker);
+      const currentPrice = stockPrices[sd.ticker] || 0;
+      const analysis = calculateDividendYield(sd.dividends as any, currentPrice, sd.ticker);
       const estimates: TrendEstimate[] = Array.from({ length: 12 }, (_, m) =>
-        calculateLatestTrendEstimate(sd.dividends as any, null, stockPrices[sd.ticker] || 0, m, cy, sd.ticker, isKrwMode, 1)
+        calculateLatestTrendEstimate(sd.dividends as any, null, currentPrice, m, cy, sd.ticker, isKrwMode, 1)
       );
       const annualKrw = estimates.reduce((s, e) => s + convKrw(e.amount * sd.quantity * tax, sd.currency), 0);
-      return { ticker: sd.ticker, name: sd.name, country: sd.country, currency: sd.currency, quantity: sd.quantity, analysis, estimates, tax, annualKrw };
+      const currentValueKrw = convKrw(sd.quantity * currentPrice, sd.currency);
+      totalAssets += currentValueKrw;
+      
+      return { ticker: sd.ticker, name: sd.name, country: sd.country, currency: sd.currency, quantity: sd.quantity, analysis, estimates, tax, annualKrw, currentValueKrw };
     }).sort((a, b) => b.annualKrw - a.annualKrw);
+    
+    return { analysisList: list, totalAssetValue: totalAssets };
   }, [stockDividends, stockPrices, isKrwMode, isAfterTax, convKrw]);
 
   const filteredList = selectedMonth === null ? analysisList : analysisList.filter(s => s.estimates[selectedMonth]?.amount > 0);
@@ -495,8 +504,18 @@ export default function DividendsScreen() {
               <Text style={{ fontSize: 9, fontWeight: '700', color: selectedMonth !== null ? '#052e16' : '#71717a' }}>{selectedMonth !== null ? '연간' : '월별'}</Text>
             </TouchableOpacity>
           </View>
-          <Text style={{ fontSize: 42, fontWeight: '900', color: '#f4f4f5', letterSpacing: -2, marginBottom: 4 }}>{formatCurrency(selectedMonth !== null ? monthVal : totalAnnual)}</Text>
-          <Text style={{ fontSize: 9, color: '#52525b' }}>{stockDividends.length}종목 · {isAfterTax ? '세후' : '세전'} · {isKrwMode ? 'KRW 기준' : '원본 통화'}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 42, fontWeight: '900', color: '#f4f4f5', letterSpacing: -2, marginBottom: 4 }}>{formatCurrency(selectedMonth !== null ? monthVal : totalAnnual)}</Text>
+              <Text style={{ fontSize: 9, color: '#52525b' }}>{stockDividends.length}종목 · {isAfterTax ? '세후' : '세전'} · {isKrwMode ? 'KRW 기준' : '원본 통화'}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end', paddingBottom: 6 }}>
+              <Text style={{ fontSize: 9, fontWeight: '900', color: '#71717a', marginBottom: 2 }}>자산 대비</Text>
+              <Text style={{ fontSize: 18, fontWeight: '900', color: '#22c55e' }}>
+                {(totalAssetValue > 0 ? ((selectedMonth !== null ? monthVal : totalAnnual) / totalAssetValue) * 100 : 0).toFixed(2)}%
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Stock list */}
