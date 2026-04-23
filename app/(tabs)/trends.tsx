@@ -217,7 +217,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
         <Defs><LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" /><Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" /></LinearGradient></Defs>
         {gridLines}
         {areaD ? <Path d={areaD} fill="url(#areaGrad)" /> : null}
-        {benchmarkD ? <Path d={benchmarkD} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="4,3" opacity={0.8} /> : null}
+        {benchmarkD ? <Path d={benchmarkD} fill="none" stroke="#f97316" strokeWidth={1.5} opacity={0.8} /> : null}
         {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
         {data.length > 0 && [0, data.length - 1].map(i => <SvgText key={`x-${i}`} x={getX(data[i].x)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor={i === 0 ? "start" : "end"}>{data[i].datum.snapshot_date.split('T')[0].slice(2)}</SvgText>)}
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
