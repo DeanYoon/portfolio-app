@@ -246,42 +246,40 @@ export default function TrendsScreen() {
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [showPicker, setShowPicker] = useState(false);
-  const [showBenchmark, setShowBenchmark] = useState(false);
-  const [benchmarkRaw, setBenchmarkRaw] = useState<Record<string, number>>({});
+  const [benchmarkSymbol, setBenchmarkSymbol] = useState<'NONE' | 'SPY' | 'SCHD' | '^KS11'>('NONE');
+  const [benchmarkRawMap, setBenchmarkRawMap] = useState<Record<string, Record<string, number>>>({});
   const isFetchingRef = useRef(false);
-  const isFetchingBenchmarkRef = useRef(false);
+  const isFetchingBenchmarkRef = useRef<Record<string, boolean>>({});
 
   const setSelectedId = async (id: string) => {
     setSelectedIdLocal(id); await setSelectedPortfolioId(id); setShowPicker(false);
   };
 
-  const loadBenchmark = async () => {
-    if (Object.keys(benchmarkRaw).length > 0 || isFetchingBenchmarkRef.current) return;
-    isFetchingBenchmarkRef.current = true;
+  const loadBenchmark = async (symbol: string) => {
+    if (benchmarkRawMap[symbol] || isFetchingBenchmarkRef.current[symbol]) return;
+    isFetchingBenchmarkRef.current[symbol] = true;
     try {
       const vercelApi = 'https://yahoo-finance-api-seven.vercel.app';
-      const url = `${vercelApi}/history?symbols=SPY&period=2y`;
+      const url = `${vercelApi}/history?symbols=${symbol}&period=2y`;
       const res = await fetch(url);
       const json = await res.json();
       
-      // 야후 API 응답 구조: { "SPY": { "prices": [...] } } 또는 { "SPY": [...] }
-      const tickerData = json?.['SPY'];
+      const tickerData = json?.[symbol];
       const prices = Array.isArray(tickerData) ? tickerData : tickerData?.prices;
       
       if (prices && Array.isArray(prices)) {
         const hist: Record<string, number> = {};
         prices.forEach((p: any) => {
-          // date가 "2024-10-29T00:00:00.000Z" 형식이거나 "2024-10-29" 형식일 수 있음
           if (p.date && p.close != null) {
             hist[p.date.split('T')[0]] = p.close;
           }
         });
-        setBenchmarkRaw(hist);
+        setBenchmarkRawMap(prev => ({ ...prev, [symbol]: hist }));
       }
     } catch (e) {
-      console.error('Failed to load SPY benchmark', e);
+      console.error(`Failed to load ${symbol} benchmark`, e);
     } finally {
-      isFetchingBenchmarkRef.current = false;
+      isFetchingBenchmarkRef.current[symbol] = false;
     }
   };
 
@@ -418,20 +416,23 @@ export default function TrendsScreen() {
   }, [allHistory, period, allocationData.total, selectedId]);
 
   const benchmarkData = useMemo(() => {
-    if (!showBenchmark || chartData.length === 0 || Object.keys(benchmarkRaw).length === 0) return [];
+    if (benchmarkSymbol === 'NONE' || chartData.length === 0) return [];
     
-    const sortedDates = Object.keys(benchmarkRaw).sort();
+    const raw = benchmarkRawMap[benchmarkSymbol];
+    if (!raw) return [];
+
+    const sortedDates = Object.keys(raw).sort();
 
     // Helper to find price on or before a date
     const getPriceOnOrBefore = (dateStr: string) => {
       let price = 0;
       for (let i = sortedDates.length - 1; i >= 0; i--) {
         if (sortedDates[i] <= dateStr) {
-          price = benchmarkRaw[sortedDates[i]];
+          price = raw[sortedDates[i]];
           break;
         }
       }
-      return price || benchmarkRaw[sortedDates[0]]; // Fallback to first available
+      return price || raw[sortedDates[0]]; // Fallback to first available
     };
 
     const firstChartDate = chartData[0].datum.snapshot_date;
@@ -440,17 +441,17 @@ export default function TrendsScreen() {
 
     if (!startPrice) return [];
     
-    const mapped = chartData.map(d => {
-      const currentPrice = getPriceOnOrBefore(d.datum.snapshot_date);
+    const mapped = chartData.map(idx => {
+      const currentPrice = getPriceOnOrBefore(idx.datum.snapshot_date);
       return {
-        x: d.x,
+        x: idx.x,
         y: (currentPrice / startPrice) * startValue,
-        datum: d.datum
+        datum: idx.datum
       };
     });
 
     return mapped;
-  }, [showBenchmark, chartData, benchmarkRaw]);
+  }, [benchmarkSymbol, chartData, benchmarkRawMap]);
 
   const onRefresh = useCallback(() => {
     loadTrends(true);
@@ -513,12 +514,17 @@ export default function TrendsScreen() {
               </View>
               <TouchableOpacity 
                 onPress={() => {
-                  if (!showBenchmark) loadBenchmark();
-                  setShowBenchmark(!showBenchmark);
+                  const sequence: ('NONE' | 'SPY' | 'SCHD' | '^KS11')[] = ['NONE', 'SPY', 'SCHD', '^KS11'];
+                  const nextIdx = (sequence.indexOf(benchmarkSymbol) + 1) % sequence.length;
+                  const nextSymbol = sequence[nextIdx];
+                  if (nextSymbol !== 'NONE') loadBenchmark(nextSymbol);
+                  setBenchmarkSymbol(nextSymbol);
                 }} 
-                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: showBenchmark ? '#3f3f46' : 'transparent', borderWidth: 1, borderColor: showBenchmark ? '#52525b' : '#27272a' }}
+                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: benchmarkSymbol !== 'NONE' ? '#3f3f46' : 'transparent', borderWidth: 1, borderColor: benchmarkSymbol !== 'NONE' ? '#52525b' : '#27272a' }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '800', color: showBenchmark ? '#f4f4f5' : '#71717a' }}>BENCHMARK</Text>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: benchmarkSymbol !== 'NONE' ? '#f4f4f5' : '#71717a' }}>
+                  {benchmarkSymbol === 'NONE' ? 'BENCHMARK' : (benchmarkSymbol === '^KS11' ? 'KOSPI' : benchmarkSymbol)}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
