@@ -168,6 +168,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
       const b = benchmarkData[activeIndices[0]];
       const bDiff = b ? b.y - startD.y : 0;
       const bRoi = b ? (bDiff / startD.y) * 100 : 0;
+      const bLabel = benchmarkSymbol === '^KS11' ? 'KOSPI' : benchmarkSymbol;
 
       return {
         x: getX(d.x),
@@ -175,7 +176,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
         lines: [
           shortDate(d.datum.snapshot_date),
           `${formatCurrency(d.y)} (${roi.toFixed(2)}%)`,
-          b ? `SPY: ${bRoi.toFixed(2)}%` : null
+          b ? `${bLabel}: ${bRoi.toFixed(2)}%` : null
         ],
         highlight: null,
         crosshairX: getX(d.x)
@@ -191,7 +192,8 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
       const be = benchmarkData[idxE];
       if (bs && be) {
         const bRoi = ((be.y - bs.y) / bs.y) * 100;
-        bLine = `SPY: ${bRoi.toFixed(2)}%`;
+        const bLabel = benchmarkSymbol === '^KS11' ? 'KOSPI' : benchmarkSymbol;
+        bLine = `${bLabel}: ${bRoi.toFixed(2)}%`;
       }
     }
 
@@ -228,7 +230,7 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease,
             <Circle cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />
           </G>
         ))}
-        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = tooltipInfo.lines[2] ? 75 : 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 35} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText>{tooltipInfo.lines[2] && <SvgText x={tipX + tipW / 2} y={tipY + 55} fontSize={11} fill="#71717a" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText>}</>); })()}</G>}
+        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = tooltipInfo.lines[2] ? 75 : 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 35} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText>{tooltipInfo.lines[2] && <SvgText x={tipX + tipW / 2} y={tipY + 55} fontSize={11} fill="#f97316" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText>}</>); })()}</G>}
       </Svg>
     </View>
   );
