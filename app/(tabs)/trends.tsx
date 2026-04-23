@@ -129,7 +129,7 @@ function AllocationPie({ data, total }: { data: any[], total: number }) {
   );
 }
 
-function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void }) {
+function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease, benchmarkData = [] }: { data: any[], yDomain: [number, number], containerW: number, activeIndices: number[], onHit: (i: number) => void, onRelease: () => void, benchmarkData?: any[] }) {
   const innerW = containerW - PAD_LEFT - PAD_RIGHT; const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
 
   // Time-scale X-Axis: Calculate X position based on date ratio
@@ -147,6 +147,9 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
   const lineD = linePoints.length > 1 ? linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') : '';
   const areaD = linePoints.length > 1 ? lineD + ` L${linePoints[linePoints.length - 1].x.toFixed(1)},${PAD_TOP + innerH} L${linePoints[0].x.toFixed(1)},${PAD_TOP + innerH} Z` : '';
 
+  const benchmarkPoints = benchmarkData.map((d) => ({ x: getX(d.x), y: sy(d.y) }));
+  const benchmarkD = benchmarkPoints.length > 1 ? benchmarkPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') : '';
+
   const colorPositive = data.length > 1 && data[data.length - 1].y >= data[0].y ? '#22c55e' : '#3b82f6';
   const gridLines: any[] = [];
   for (let i = 0; i <= 3; i++) {
@@ -161,13 +164,18 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
       const startD = data[0];
       const diff = d.y - startD.y;
       const roi = startD.y > 0 ? (diff / startD.y) * 100 : 0;
+      
+      const b = benchmarkData[activeIndices[0]];
+      const bDiff = b ? b.y - startD.y : 0;
+      const bRoi = b ? (bDiff / startD.y) * 100 : 0;
+
       return {
         x: getX(d.x),
         y: sy(d.y),
         lines: [
           shortDate(d.datum.snapshot_date),
-          `${formatCurrency(d.y)}`,
-          `${diff >= 0 ? '+' : ''}${roi.toFixed(2)}%`
+          `${formatCurrency(d.y)} (${roi.toFixed(2)}%)`,
+          b ? `SPY: ${bRoi.toFixed(2)}%` : null
         ],
         highlight: null,
         crosshairX: getX(d.x)
@@ -175,8 +183,20 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
     }
     const idxS = Math.min(...activeIndices); const idxE = Math.max(...activeIndices); const s = data[idxS]; const e = data[idxE];
     const diff = e.y - s.y; const roi = s.y > 0 ? (diff / s.y) * 100 : 0;
-    return { x: (getX(s.x) + getX(e.x)) / 2, y: Math.min(sy(s.y), sy(e.y)), lines: [`${shortDate(s.datum.snapshot_date)} ~ ${shortDate(e.datum.snapshot_date)}`, `${diff >= 0 ? '+' : ''}${formatCurrency(diff)} (${roi.toFixed(2)}%)`], highlight: { x1: getX(s.x), x2: getX(e.x) }, crosshairX: null };
-  }, [activeIndices, data]);
+    
+    // Period ROI for benchmark
+    let bLine = null;
+    if (benchmarkData.length > 0) {
+      const bs = benchmarkData[idxS];
+      const be = benchmarkData[idxE];
+      if (bs && be) {
+        const bRoi = ((be.y - bs.y) / bs.y) * 100;
+        bLine = `SPY: ${bRoi.toFixed(2)}%`;
+      }
+    }
+
+    return { x: (getX(s.x) + getX(e.x)) / 2, y: Math.min(sy(s.y), sy(e.y)), lines: [`${shortDate(s.datum.snapshot_date)} ~ ${shortDate(e.datum.snapshot_date)}`, `Port: ${roi.toFixed(2)}%`, bLine], highlight: { x1: getX(s.x), x2: getX(e.x) }, crosshairX: null };
+  }, [activeIndices, data, benchmarkData]);
 
   return (
     <View style={{ position: 'relative' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => {
@@ -197,12 +217,18 @@ function MiniChart({ data, yDomain, containerW, activeIndices, onHit, onRelease 
         <Defs><LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><Stop offset="0%" stopColor={colorPositive} stopOpacity="0.25" /><Stop offset="100%" stopColor={colorPositive} stopOpacity="0.02" /></LinearGradient></Defs>
         {gridLines}
         {areaD ? <Path d={areaD} fill="url(#areaGrad)" /> : null}
+        {benchmarkD ? <Path d={benchmarkD} fill="none" stroke="#71717a" strokeWidth={1.5} strokeDasharray="4,3" opacity={0.6} /> : null}
         {lineD ? <Path d={lineD} fill="none" stroke={colorPositive} strokeWidth={2.5} strokeLinejoin="round" /> : null}
         {data.length > 0 && [0, data.length - 1].map(i => <SvgText key={`x-${i}`} x={getX(data[i].x)} y={CHART_H - 4} fontSize={9} fill="#52525b" textAnchor={i === 0 ? "start" : "end"}>{data[i].datum.snapshot_date.split('T')[0].slice(2)}</SvgText>)}
         {tooltipInfo?.highlight && <Path d={`M${tooltipInfo.highlight.x1},${PAD_TOP} L${tooltipInfo.highlight.x1},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP + innerH} L${tooltipInfo.highlight.x2},${PAD_TOP} Z`} fill={colorPositive} opacity={0.08} />}
         {tooltipInfo?.crosshairX != null && <Line x1={tooltipInfo.crosshairX} x2={tooltipInfo.crosshairX} y1={PAD_TOP} y2={PAD_TOP + innerH} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />}
-        {activeIndices.map(idx => <Circle key={`a-${idx}`} cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />)}
-        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; const tipColor = tooltipInfo.lines[2]?.includes('%') ? (tooltipInfo.lines[2].startsWith('+') ? '#ef4444' : '#3b82f6') : '#f4f4f5'; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 30} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 45} fontSize={11} fill={tipColor} textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText></>); })()}</G>}
+        {activeIndices.map(idx => (
+          <G key={`points-${idx}`}>
+            {benchmarkData[idx] && <Circle cx={getX(data[idx].x)} cy={sy(benchmarkData[idx].y)} r={3} fill="#71717a" />}
+            <Circle cx={getX(data[idx].x)} cy={sy(data[idx].y)} r={5} fill="#fff" stroke={colorPositive} strokeWidth={2} />
+          </G>
+        ))}
+        {tooltipInfo && <G>{(() => { const tipY = Math.max(PAD_TOP, tooltipInfo.y - 65); const tipW = 160; const tipH = tooltipInfo.lines[2] ? 75 : 60; let tipX = tooltipInfo.x - tipW / 2; if (tipX < PAD_LEFT) tipX = PAD_LEFT; if (tipX + tipW > PAD_LEFT + innerW) tipX = PAD_LEFT + innerW - tipW; return (<><Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} ry={8} fill="#27272a" stroke="#3f3f46" strokeWidth={1} /><SvgText x={tipX + tipW / 2} y={tipY + 15} fontSize={9} fill="#a1a1aa" textAnchor="middle" fontWeight="600">{tooltipInfo.lines[0]}</SvgText><SvgText x={tipX + tipW / 2} y={tipY + 35} fontSize={11} fill="#e4e4e7" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[1]}</SvgText>{tooltipInfo.lines[2] && <SvgText x={tipX + tipW / 2} y={tipY + 55} fontSize={11} fill="#71717a" textAnchor="middle" fontWeight="800">{tooltipInfo.lines[2]}</SvgText>}</>); })()}</G>}
       </Svg>
     </View>
   );
@@ -220,10 +246,36 @@ export default function TrendsScreen() {
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [showBenchmark, setShowBenchmark] = useState(false);
+  const [benchmarkRaw, setBenchmarkRaw] = useState<Record<string, number>>({});
   const isFetchingRef = useRef(false);
+  const isFetchingBenchmarkRef = useRef(false);
 
   const setSelectedId = async (id: string) => {
     setSelectedIdLocal(id); await setSelectedPortfolioId(id); setShowPicker(false);
+  };
+
+  const loadBenchmark = async () => {
+    if (Object.keys(benchmarkRaw).length > 0 || isFetchingBenchmarkRef.current) return;
+    isFetchingBenchmarkRef.current = true;
+    try {
+      const vercelApi = 'https://yahoo-finance-api-seven.vercel.app';
+      const url = `${vercelApi}/history?symbols=SPY&period=2y`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const tickerData = json?.['SPY'];
+      if (tickerData?.prices) {
+        const hist: Record<string, number> = {};
+        tickerData.prices.forEach((p: any) => {
+          if (p.date) hist[p.date.split('T')[0]] = p.close;
+        });
+        setBenchmarkRaw(hist);
+      }
+    } catch (e) {
+      console.error('Failed to load SPY benchmark', e);
+    } finally {
+      isFetchingBenchmarkRef.current = false;
+    }
   };
 
   const loadTrends = useCallback(async (forceRefresh = false) => {
@@ -358,6 +410,42 @@ export default function TrendsScreen() {
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
   }, [allHistory, period, allocationData.total, selectedId]);
 
+  const benchmarkData = useMemo(() => {
+    if (!showBenchmark || chartData.length === 0 || Object.keys(benchmarkRaw).length === 0) return [];
+    
+    // Find the closest SPY price for the starting point
+    let startPrice = 0;
+    const sortedDates = Object.keys(benchmarkRaw).sort();
+    const firstChartDate = chartData[0].datum.snapshot_date;
+
+    // SPY 데이터 중 chartData[0].datum.snapshot_date와 가장 가깝거나 이전인 가격을 찾음
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      if (sortedDates[i] <= firstChartDate) {
+        startPrice = benchmarkRaw[sortedDates[i]];
+        break;
+      }
+    }
+    if (startPrice === 0) startPrice = benchmarkRaw[sortedDates[0]];
+
+    const startValue = chartData[0].y;
+    
+    return chartData.map(d => {
+      const dateStr = d.datum.snapshot_date;
+      // 해당 날짜의 SPY 가격 찾기 (없으면 이전 가격 유지)
+      let currentPrice = startPrice;
+      for (let i = sortedDates.length - 1; i >= 0; i--) {
+        if (sortedDates[i] <= dateStr) {
+          currentPrice = benchmarkRaw[sortedDates[i]];
+          break;
+        }
+      }
+      return {
+        x: d.x,
+        y: (currentPrice / startPrice) * startValue
+      };
+    });
+  }, [showBenchmark, chartData, benchmarkRaw]);
+
   const onRefresh = useCallback(() => {
     loadTrends(true);
   }, [loadTrends]);
@@ -398,13 +486,24 @@ export default function TrendsScreen() {
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#71717a' }}>({diff >= 0 ? '+' : ''}{formatCurrency(diff)})</Text>
               </View>
             </View>
-            <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} /></View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
-              {(['1W', '1M', '3M', 'ALL'] as const).map((p) => (
-                <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} benchmarkData={benchmarkData} /></View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                {(['1W', '1M', '3M', 'ALL'] as const).map((p) => (
+                  <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity 
+                onPress={() => {
+                  if (!showBenchmark) loadBenchmark();
+                  setShowBenchmark(!showBenchmark);
+                }} 
+                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: showBenchmark ? '#3f3f46' : 'transparent', borderWidth: 1, borderColor: showBenchmark ? '#52525b' : '#27272a' }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '800', color: showBenchmark ? '#f4f4f5' : '#71717a' }}>BENCHMARK</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ErrorBoundary>
