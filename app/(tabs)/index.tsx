@@ -412,7 +412,7 @@ export default function DashboardScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />} contentContainerStyle={{ padding: 16, paddingTop: 8 }}>
         <View style={{ marginBottom: 20 }}>
-          <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 10 }}>TOTAL ASSET</Text>
+          <Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2, marginBottom: 10 }}>OVERALL BALANCE</Text>
           <Text style={{ fontSize: 32, fontWeight: '900', color: '#f4f4f5', letterSpacing: -1 }}>{formatCurrency(totals.gT)}</Text>
         </View>
 
