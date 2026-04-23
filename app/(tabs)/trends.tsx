@@ -241,7 +241,7 @@ export default function TrendsScreen() {
   const [selectedId, setSelectedIdLocal] = useState<string>('ALL');
   const [dataLoading, setDataLoading] = useState(true);
   const [rawSnapshots, setRawSnapshots] = useState<any[]>([]);
-  const [period, setPeriod] = useState<'1W' | '1M' | '3M' | 'ALL'>('1M');
+  const [period, setPeriod] = useState<'1W' | '1M' | '3M' | '6M' | 'ALL'>('1M');
   const [holdings, setHoldings] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, any>>({});
   const [activeIndices, setActiveIndices] = useState<number[]>([]);
@@ -411,7 +411,7 @@ export default function TrendsScreen() {
       processedHistory[processedHistory.length - 1].total_value_krw = allocationData.total;
     }
 
-    const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate() - 7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth() - 1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth() - 3);
+    const cutoff = new Date(); if (period === '1W') cutoff.setDate(cutoff.getDate() - 7); else if (period === '1M') cutoff.setMonth(cutoff.getMonth() - 1); else if (period === '3M') cutoff.setMonth(cutoff.getMonth() - 3); else if (period === '6M') cutoff.setMonth(cutoff.getMonth() - 6);
     const cutoffStr = cutoff.toISOString().split('T')[0];
     const filtered = period === 'ALL' ? processedHistory : processedHistory.filter(s => s.snapshot_date >= cutoffStr);
     return filtered.map(s => ({ x: new Date(s.snapshot_date), y: s.total_value_krw, datum: s }));
@@ -505,9 +505,9 @@ export default function TrendsScreen() {
             <View style={{ height: CHART_H, marginLeft: -16 }}><MiniChart data={chartData} yDomain={yDomain} containerW={width - 32} activeIndices={activeIndices} onHit={i => setActiveIndices([i])} onRelease={() => setActiveIndices([])} benchmarkData={benchmarkData} /></View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
               <View style={{ flexDirection: 'row', gap: 4 }}>
-                {(['1W', '1M', '3M', 'ALL'] as const).map((p) => (
-                  <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
+                {(['1W', '1M', '3M', '6M', 'ALL'] as const).map((p) => (
+                  <TouchableOpacity key={p} onPress={() => setPeriod(p)} style={{ paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6, backgroundColor: period === p ? '#27272a' : 'transparent' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: period === p ? '#f4f4f5' : '#71717a' }}>{p}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
