@@ -263,11 +263,18 @@ export default function TrendsScreen() {
       const url = `${vercelApi}/history?symbols=SPY&period=2y`;
       const res = await fetch(url);
       const json = await res.json();
+      
+      // 야후 API 응답 구조: { "SPY": { "prices": [...] } } 또는 { "SPY": [...] }
       const tickerData = json?.['SPY'];
-      if (tickerData?.prices) {
+      const prices = Array.isArray(tickerData) ? tickerData : tickerData?.prices;
+      
+      if (prices && Array.isArray(prices)) {
         const hist: Record<string, number> = {};
-        tickerData.prices.forEach((p: any) => {
-          if (p.date) hist[p.date.split('T')[0]] = p.close;
+        prices.forEach((p: any) => {
+          // date가 "2024-10-29T00:00:00.000Z" 형식이거나 "2024-10-29" 형식일 수 있음
+          if (p.date && p.close != null) {
+            hist[p.date.split('T')[0]] = p.close;
+          }
         });
         setBenchmarkRaw(hist);
       }
@@ -413,32 +420,28 @@ export default function TrendsScreen() {
   const benchmarkData = useMemo(() => {
     if (!showBenchmark || chartData.length === 0 || Object.keys(benchmarkRaw).length === 0) return [];
     
-    // Find the closest SPY price for the starting point
-    let startPrice = 0;
     const sortedDates = Object.keys(benchmarkRaw).sort();
-    const firstChartDate = chartData[0].datum.snapshot_date;
 
-    // SPY 데이터 중 chartData[0].datum.snapshot_date와 가장 가깝거나 이전인 가격을 찾음
-    for (let i = sortedDates.length - 1; i >= 0; i--) {
-      if (sortedDates[i] <= firstChartDate) {
-        startPrice = benchmarkRaw[sortedDates[i]];
-        break;
-      }
-    }
-    if (startPrice === 0) startPrice = benchmarkRaw[sortedDates[0]];
-
-    const startValue = chartData[0].y;
-    
-    return chartData.map(d => {
-      const dateStr = d.datum.snapshot_date;
-      // 해당 날짜의 SPY 가격 찾기 (없으면 이전 가격 유지)
-      let currentPrice = startPrice;
+    // Helper to find price on or before a date
+    const getPriceOnOrBefore = (dateStr: string) => {
+      let price = 0;
       for (let i = sortedDates.length - 1; i >= 0; i--) {
         if (sortedDates[i] <= dateStr) {
-          currentPrice = benchmarkRaw[sortedDates[i]];
+          price = benchmarkRaw[sortedDates[i]];
           break;
         }
       }
+      return price || benchmarkRaw[sortedDates[0]]; // Fallback to first available
+    };
+
+    const firstChartDate = chartData[0].datum.snapshot_date;
+    const startPrice = getPriceOnOrBefore(firstChartDate);
+    const startValue = chartData[0].y;
+
+    if (!startPrice) return [];
+    
+    return chartData.map(d => {
+      const currentPrice = getPriceOnOrBefore(d.datum.snapshot_date);
       return {
         x: d.x,
         y: (currentPrice / startPrice) * startValue
