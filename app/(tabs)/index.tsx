@@ -344,17 +344,13 @@ export default function DashboardScreen() {
       });
     });
 
-    // 티커별 통합 (통합 계좌일 경우 동일 종목 합산) - 현금은 개별 표시
+    // 티커별 통합 (통합 계좌일 경우 동일 종목 합산)
     const consolidatedMap: Record<string, any> = {};
     allStocks.forEach(s => {
-      const isCash = s.ticker.startsWith('CASH_');
-      // 현금은 개별 id를 키로 사용하여 합산 방지, 주식은 티커로 합산
-      const key = isCash ? s.id : s.ticker;
-
-      if (!consolidatedMap[key]) {
-        consolidatedMap[key] = { ...s };
+      if (!consolidatedMap[s.ticker]) {
+        consolidatedMap[s.ticker] = { ...s };
       } else {
-        const existing = consolidatedMap[key];
+        const existing = consolidatedMap[s.ticker];
         existing.quantity += s.quantity;
         existing.valueKRW += s.valueKRW;
         existing.valueLocal += s.valueLocal;
@@ -498,13 +494,36 @@ export default function DashboardScreen() {
                     router.push(`/stock/${h.ticker}`); 
                   }}
                   onLongPress={() => { 
-                    if (selectedId === 'ALL') {
-                      Alert.alert('알림', '통합 계좌 뷰에서는 개별 종목을 수정할 수 없습니다. 개별 계좌를 선택해 주세요.');
-                      return;
-                    }
-                    setEditHolding(h); 
-                    setShowHoldingModal(true); 
-                  }}
+      if (selectedId === 'ALL') {
+        Alert.alert('알림', '통합 계좌 뷰에서는 개별 종목을 수정할 수 없습니다. 개별 계좌를 선택해 주세요.');
+        return;
+      }
+      
+      const isCash = h.ticker.startsWith('CASH_');
+      if (isCash) {
+        // 해당 계좌(selectedId) 내의 모든 동일 통화 현금 내역을 가져옴
+        const p = portfolios.find(p => String(p.id) === String(selectedId));
+        const sameCurrencyCash = p?.holdings.filter(item => item.ticker === h.ticker) || [];
+        
+        if (sameCurrencyCash.length > 1) {
+          Alert.alert(
+            '현금 내역 선택',
+            '수정할 현금 내역을 선택해주세요.',
+            sameCurrencyCash.map(item => ({
+              text: `${formatCurrency(item.quantity, h.ticker.split('_')[1])} (ID: ${item.id.substring(0,4)})`,
+              onPress: () => {
+                setEditHolding(item);
+                setShowHoldingModal(true);
+              }
+            })).concat([{ text: '취소', style: 'cancel' } as any])
+          );
+          return;
+        }
+      }
+      
+      setEditHolding(h);
+      setShowHoldingModal(true);
+    }}
                   delayLongPress={500}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1e1e26' }}
                 >
