@@ -344,20 +344,24 @@ export default function DashboardScreen() {
       });
     });
 
-    // 티커별 통합 (통합 계좌일 경우 동일 종목 합산)
+    // 티커별 통합 (통합 계좌일 경우 동일 종목 합산) - 현금은 개별 표시
     const consolidatedMap: Record<string, any> = {};
     allStocks.forEach(s => {
-      if (!consolidatedMap[s.ticker]) {
-        consolidatedMap[s.ticker] = { ...s };
+      const isCash = s.ticker.startsWith('CASH_');
+      // 현금은 개별 id를 키로 사용하여 합산 방지, 주식은 티커로 합산
+      const key = isCash ? s.id : s.ticker;
+
+      if (!consolidatedMap[key]) {
+        consolidatedMap[key] = { ...s };
       } else {
-        const existing = consolidatedMap[s.ticker];
+        const existing = consolidatedMap[key];
         existing.quantity += s.quantity;
         existing.valueKRW += s.valueKRW;
         existing.valueLocal += s.valueLocal;
         existing.profitValueKRW += s.profitValueKRW;
         existing.dayChangeKRW += s.dayChangeKRW;
         // 가중 평균 수익률/변동률 계산 (단순 합산이 아닌 가치 비중 기준)
-        existing.profitRate = existing.valueKRW > existing.profitValueKRW ? (existing.profitValueKRW / (existing.valueKRW - existing.profitValueKRW)) * 100 : 0;
+        existing.profitRate = (existing.valueKRW - existing.profitValueKRW) > 0 ? (existing.profitValueKRW / (existing.valueKRW - existing.profitValueKRW)) * 100 : 0;
       }
     });
 
