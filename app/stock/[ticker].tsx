@@ -8,6 +8,7 @@ import { getStockHistory } from '@/src/utils/history-cache';
 import { getTickerQuote } from '@/src/utils/quote-cache';
 import { getHoldings, clearHoldingsCache } from '@/src/utils/holdings-cache';
 import { clearDividendsCache } from '@/src/utils/dividends-cache';
+import { getSelectedPortfolioId } from '@/src/utils/portfolio-state';
 import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import HoldingModal from '@/src/components/holding-modal';
@@ -97,7 +98,12 @@ export default function StockDetailScreen() {
 
       if (!isSilent) {
         const hData = await getHoldings();
-        setHoldings(hData.filter(h => h.ticker === ticker));
+        const selectedId = await getSelectedPortfolioId();
+        const filtered = hData.filter(h => {
+          if (selectedId !== 'ALL' && String(h.portfolio_id) !== selectedId) return false;
+          return h.ticker === ticker;
+        });
+        setHoldings(filtered);
       }
     } catch (e) {
       console.error(e);
