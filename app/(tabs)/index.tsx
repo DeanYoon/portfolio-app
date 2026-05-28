@@ -499,26 +499,29 @@ export default function DashboardScreen() {
         return;
       }
       
-      const isCash = h.ticker.startsWith('CASH_');
-      if (isCash) {
-        // 해당 계좌(selectedId) 내의 모든 동일 통화 현금 내역을 가져옴
-        const p = portfolios.find(p => String(p.id) === String(selectedId));
-        const sameCurrencyCash = p?.holdings.filter(item => item.ticker === h.ticker) || [];
-        
-        if (sameCurrencyCash.length > 1) {
-          Alert.alert(
-            '현금 내역 선택',
-            '수정할 현금 내역을 선택해주세요.',
-            sameCurrencyCash.map(item => ({
-              text: `${formatCurrency(item.quantity, h.ticker.split('_')[1])} (ID: ${item.id.substring(0,4)})`,
+      // 해당 계좌 내의 동일 티커를 가진 모든 원본 holdings 조회
+      const p = portfolios.find(p => String(p.id) === String(selectedId));
+      const sameTickerItems = p?.holdings.filter(item => item.ticker === h.ticker) || [];
+      
+      if (sameTickerItems.length > 1) {
+        const isCash = h.ticker.startsWith('CASH_');
+        Alert.alert(
+          '포지션 선택',
+          `수정할 "${h.displayName || h.ticker}" 포지션을 선택해주세요.`,
+          sameTickerItems.map(item => {
+            const subtitle = isCash
+              ? `${formatCurrency(item.quantity, h.ticker.split('_')[1])}`
+              : `${item.quantity}주 @ ${formatCurrency(item.avg_price, item.currency)}`;
+            return {
+              text: `${subtitle} (ID: ${item.id.substring(0, 4)})`,
               onPress: () => {
                 setEditHolding(item);
                 setShowHoldingModal(true);
               }
-            })).concat([{ text: '취소', style: 'cancel' } as any])
-          );
-          return;
-        }
+            };
+          }).concat([{ text: '취소', style: 'cancel' } as any])
+        );
+        return;
       }
       
       setEditHolding(h);
