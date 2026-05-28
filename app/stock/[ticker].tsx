@@ -1,14 +1,16 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Dimensions } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Dimensions, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info } from 'lucide-react-native';
+import { ArrowLeft, TrendingUp, TrendingDown, Wallet, Clock, Info, Pencil, Trash2 } from 'lucide-react-native';
 import { supabase } from '@/src/lib/supabase';
 import { formatCurrency, formatRate, getFlag, getCountry } from '@/src/utils/format';
 import { getStockHistory } from '@/src/utils/history-cache';
 import { getTickerQuote } from '@/src/utils/quote-cache';
-import { getHoldings } from '@/src/utils/holdings-cache';
+import { getHoldings, clearHoldingsCache } from '@/src/utils/holdings-cache';
+import { clearDividendsCache } from '@/src/utils/dividends-cache';
 import Svg, { Defs, LinearGradient, Stop, Line, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import HoldingModal from '@/src/components/holding-modal';
 
 const { width } = Dimensions.get('window');
 const SPARKLINE_H = 200;
@@ -28,6 +30,9 @@ export default function StockDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState('6mo');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editHolding, setEditHolding] = useState<any>(null);
+  const [showHoldingModal, setShowHoldingModal] = useState(false);
   const isFetchingRef = useRef(false);
 
   const fetchStockData = useCallback(async (isSilent = false) => {
@@ -178,7 +183,40 @@ export default function StockDetailScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}><Wallet size={16} color="#71717a" /><Text style={{ fontSize: 10, fontWeight: '900', color: '#52525b', letterSpacing: 2 }}>MY POSITION</Text></View>
             {holdings.map((h, i) => {
               const pV = (priceData.price - h.avg_price) * h.quantity; const pR = ((priceData.price - h.avg_price) / h.avg_price) * 100; const isP = pV >= 0;
-              return (<View key={i} style={{ marginBottom: i === holdings.length - 1 ? 0 : 20 }}><Text style={{ fontSize: 12, fontWeight: '800', color: '#71717a', marginBottom: 8 }}>{h.portfolios?.name}</Text><View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}><View><Text style={{ fontSize: 20, fontWeight: '900', color: '#f4f4f5' }}>{h.quantity.toLocaleString()} 주</Text><Text style={{ fontSize: 12, color: '#52525b' }}>평균단가: {h.avg_price.toLocaleString()}</Text></View><View style={{ alignItems: 'flex-end' }}><Text style={{ fontSize: 18, fontWeight: '900', color: isP ? '#ef4444' : '#3b82f6' }}>{isP ? '+' : ''}{pV.toLocaleString(undefined, { maximumFractionDigits: 2 })}</Text><Text style={{ fontSize: 12, fontWeight: '700', color: isP ? '#ef4444' : '#3b82f6' }}>{formatRate(pR)}</Text></View></View></View>);
+              return (
+                <View key={h.id} style={{ marginBottom: i === holdings.length - 1 ? 0 : 20 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#71717a', marginBottom: 8 }}>{h.portfolios?.name}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
+                    <View><Text style={{ fontSize: 20, fontWeight: '900', color: '#f4f4f5' }}>{h.quantity.toLocaleString()} 주</Text><Text style={{ fontSize: 12, color: '#52525b' }}>평균단가: {h.avg_price.toLocaleString()}</Text></View>
+                    <View style={{ alignItems: 'flex-end' }}><Text style={{ fontSize: 18, fontWeight: '900', color: isP ? '#ef4444' : '#3b82f6' }}>{isP ? '+' : ''}{pV.toLocaleString(undefined, { maximumFractionDigits: 2 })}</Text><Text style={{ fontSize: 12, fontWeight: '700', color: isP ? '#ef4444' : '#3b82f6' }}>{formatRate(pR)}</Text></View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={() => { setEditHolding(h); setShowHoldingModal(true); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: '#27272a', borderRadius: 10 }}>
+                      <Pencil size={14} color="#e4e4e7" /><Text style={{ fontSize: 12, fontWeight: '700', color: '#e4e4e7' }}>수정</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('삭제 확인', `"${h.portfolios?.name}" 계좌의 이 포지션을 삭제합니다.`, [
+                          { text: '취소', style: 'cancel' },
+                          { text: '삭제', style: 'destructive', onPress: async () => {
+                            try {
+                              const { error } = await supabase.from('holdings').delete().eq('id', h.id);
+                              if (error) throw error;
+                              await Promise.all([clearHoldingsCache(), clearDividendsCache()]);
+                              setHoldings(prev => prev.filter(item => item.id !== h.id));
+                            } catch (e: any) {
+                              Alert.alert('오류', '삭제 중 오류가 발생했습니다.');
+                            }
+                          }},
+                        ]);
+                      }}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 10 }}
+                    >
+                      <Trash2 size={14} color="#ef4444" /><Text style={{ fontSize: 12, fontWeight: '700', color: '#ef4444' }}>삭제</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
             })}
           </View>
         )}
@@ -189,6 +227,15 @@ export default function StockDetailScreen() {
           <InfoRow label="Update" value={new Date(priceData.last_updated).toLocaleString()} />
         </View>
       </ScrollView>
+
+      <HoldingModal
+        visible={showHoldingModal}
+        onClose={() => { setShowHoldingModal(false); setEditHolding(null); }}
+        portfolioId={editHolding?.portfolio_id || ''}
+        holdingId={editHolding?.id}
+        initialData={editHolding ? { ...editHolding, avg_price: editHolding.avg_price } : undefined}
+        onSuccess={() => { fetchStockData(); }}
+      />
     </View>
   );
 }
