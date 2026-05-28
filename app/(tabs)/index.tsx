@@ -492,25 +492,6 @@ export default function DashboardScreen() {
                 <TouchableOpacity
                   key={h.id}
                   onPress={() => {
-                    if (isCash) {
-                      // 현금: 롱프레스와 동일하게 수정 모달
-                      if (selectedId === 'ALL') {
-                        Alert.alert('알림', '통합 계좌 뷰에서는 개별 종목을 수정할 수 없습니다. 개별 계좌를 선택해 주세요.');
-                        return;
-                      }
-                      const pf = portfolios.find(p => String(p.id) === String(selectedId));
-                      const sameItems = pf?.holdings.filter(item => item.ticker === h.ticker) || [];
-                      if (sameItems.length > 1) {
-                        Alert.alert('포지션 선택', `수정할 "${h.displayName || h.ticker}" 포지션을 선택해주세요.`, sameItems.map(item => ({
-                          text: `${formatCurrency(item.quantity, h.ticker.split('_')[1])} (ID: ${item.id.substring(0, 4)})`,
-                          onPress: () => { setEditHolding(item); setShowHoldingModal(true); }
-                        })).concat([{ text: '취소', style: 'cancel' } as any]));
-                        return;
-                      }
-                      setEditHolding(h);
-                      setShowHoldingModal(true);
-                      return;
-                    }
                     router.push(`/stock/${h.ticker}`);
                   }}
                   onLongPress={() => {
@@ -522,9 +503,7 @@ export default function DashboardScreen() {
                     const sameItems = pf?.holdings.filter(item => item.ticker === h.ticker) || [];
                     if (sameItems.length > 1) {
                       Alert.alert('포지션 선택', `수정할 "${h.displayName || h.ticker}" 포지션을 선택해주세요.`, sameItems.map(item => {
-                        const subtitle = isCash
-                          ? `${formatCurrency(item.quantity, h.ticker.split('_')[1])}`
-                          : `${item.quantity}주 @ ${formatCurrency(item.avg_price, item.currency)}`;
+                        const subtitle = `${item.quantity.toLocaleString()} @ ${formatCurrency(item.avg_price, item.currency)}`;
                         return {
                           text: `${subtitle} (ID: ${item.id.substring(0, 4)})`,
                           onPress: () => { setEditHolding(item); setShowHoldingModal(true); }
